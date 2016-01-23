@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Pop Holder</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="FileSaver.js"></script>
+    <script src="three.min.js"></script>
+    <script src="csg.js"></script>
+    <script src="orbit_controls.js"></script>
+    <script src="ThreeCSG.js"></script>
+    <script src="cad.js"></script>
+    <script src="gear.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+var PREPARE_FOR_PRINTING = true;
+var CYLINDER_QUALITY = PREPARE_FOR_PRINTING ? 20 : 20;
+
+var PART_TOLERANCE = .1;
+
+var AXEL_CENTER = {x:0, y:0, z:.8};
+var AXEL_WIDTH = 54;
+var AXEL_RADIUS = 5;
+var HANDLE_WIDTH = 8;
+var HANDLE_RADIUS = 15;
+var GEAR_WIDTH = 4;
+var AXEL_FASTENER_DEPTH = 4;
+var AXEL_FASTENER_WIDTH = 4;
+var GEAR_OFFSET = HANDLE_WIDTH + AXEL_FASTENER_DEPTH;
+
+var RATCHET_HEIGHT = 5;
+var RATCHET_WIDTH = 1.2;
+var RATCHET_TOOTH_DEPTH = .1;
+var RATCHET_TOOTH_WIDTH = 1;
+
+var POP_HOLDER_HEIGHT = 4;
+var POP_HOLDER_WIDTH = AXEL_WIDTH - 2*(HANDLE_WIDTH+AXEL_FASTENER_DEPTH);
+var POP_HOLDER_LENGTH = 220;
+var POP_HOLDER_CENTER = {x:-POP_HOLDER_LENGTH/2+2.5*AXEL_RADIUS, y:0, z:-POP_HOLDER_HEIGHT/2 - AXEL_RADIUS}
+var RACK_DEPRESSION = .5;
+var POP_HOLDER_HOLE_RADIUS = (POP_HOLDER_WIDTH - 2*GEAR_WIDTH - 4)/2;
+var POP_HOLDER_STOP_WIDTH = 4;
+
+var BASKET_DEPTH = 18;
+var BASKET_HEIGHT = 5;
+var BASKET_THICKNESS = 2.5;
+
+var OUTPUT_WIDTH = 4;
+var OUTPUT_HEIGHT = 1.5;
+var OUTPUT_OFFSET = 1;
+var BASE_DEPTH = 3;
+var BASE_WIDTH = 22;
+
+var BAR_GRIP_WIDTH = 21;
+var BAR_GRIP_LENGTH = BASE_WIDTH;
+var BAR_GRIP_UPPER_DEPTH = 13;
+var BAR_RADIUS = 11.1;
+var BAR_CENTER_X = 5;
+var UPPER_GRIP_RADIUS = 14;
+var LOWER_GRIP_RADIUS = 14;
+
+var ASSEMBLY_1_SCREW_Y = -AXEL_WIDTH/2 + HANDLE_WIDTH + PART_TOLERANCE + NUMBER_FOUR_NUT_RADIUS;
+var ASSEMBLY_1_SCREW_Z = -AXEL_RADIUS- POP_HOLDER_HEIGHT - NUMBER_FOUR_NUT_RADIUS;
+var NUMBER_FOUR_SCREW_RADIUS = 1.4;
+var NUMBER_FOUR_SCREW_OUTER_RADIUS = 2;
+var NUMBER_FOUR_NUT_RADIUS = 3.175;
+var NUMBER_FOUR_NUT_OUTER_RADIUS = 3.66;
+
+var HINGE_RADIUS = NUMBER_FOUR_NUT_RADIUS;
+var HINGE_WIDTH = 10;
+var HINGE_SHELF = 4;
+var HINGE_SCREW_X = BAR_CENTER_X - BAR_RADIUS - NUMBER_FOUR_NUT_OUTER_RADIUS
+var LOWER_GRIP_NUT_DEPTH = 2;
+
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  var numTeeth = 13;
+  var circularPitch = (AXEL_RADIUS+RACK_DEPRESSION) / (numTeeth / (2 * Math.PI) - .8 / Math.PI)
+  var gearProps = a3d.gear.gearProps(circularPitch,20,numTeeth);
+
+  addControl(gearProps);
+  /*
+  addPopHolder(gearProps);
+  addAxelFastener(gearProps);
+  addBase()
+  addHinge();
+  */
+}
+
+function addHinge() {
+  var handleBarZ = -AXEL_RADIUS-POP_HOLDER_HEIGHT-BASE_DEPTH-BAR_GRIP_UPPER_DEPTH;
+
+  var hinge = CSG.cylinder({
+    start: [BAR_CENTER_X, -BAR_GRIP_WIDTH/2,handleBarZ],
+    end: [BAR_CENTER_X, BAR_GRIP_WIDTH/2,handleBarZ],
+    radius: LOWER_GRIP_RADIUS,
+    slices: CYLINDER_QUALITY
+  }).subtract(CSG.cube({
+    center: [0,0, handleBarZ + LOWER_GRIP_RADIUS/2],
+    radius: [BASE_WIDTH, AXEL_WIDTH/2, LOWER_GRIP_RADIUS/2]
+  })).subtract(CSG.cylinder({
+    start: [BAR_CENTER_X, -.6*BAR_GRIP_WIDTH,handleBarZ],
+    end: [BAR_CENTER_X, .6*BAR_GRIP_WIDTH,handleBarZ],
+    radius: BAR_RADIUS,
+    slices: CYLINDER_QUALITY    
+  })).union(CSG.cube({
+    center: [HINGE_SCREW_X ,0, handleBarZ - HINGE_SHELF/2],
+    radius: [(BASE_WIDTH/2 + BAR_CENTER_X - BAR_RADIUS)/2, BAR_GRIP_WIDTH/2, HINGE_SHELF/2]    
+  }))
+  // NUT AND SCREW HOLE
+  .union(CSG.cylinder({
+    start: [HINGE_SCREW_X, 0, handleBarZ - HINGE_SHELF],
+    end: [HINGE_SCREW_X, 0, handleBarZ],
+    radius: NUMBER_FOUR_NUT_OUTER_RADIUS,
+    slices: CYLINDER_QUALITY    
+  })).subtract(CSG.cylinder({
+    start: [HINGE_SCREW_X, 0, handleBarZ - LOWER_GRIP_RADIUS],
+    end: [HINGE_SCREW_X, 0, handleBarZ - HINGE_SHELF],
+    radius: NUMBER_FOUR_NUT_OUTER_RADIUS,
+    slices: CYLINDER_QUALITY    
+  }))
+  .subtract(CSG.cylinder({
+    start: [HINGE_SCREW_X, 0, handleBarZ - LOWER_GRIP_RADIUS],
+    end: [HINGE_SCREW_X, 0, handleBarZ + 1],
+    radius: NUMBER_FOUR_SCREW_OUTER_RADIUS,
+    slices: CYLINDER_QUALITY    
+  }))
+  // HINGE
+  .union(CSG.cylinder({
+    start: [BAR_RADIUS+BAR_CENTER_X+HINGE_RADIUS,-.5*BAR_GRIP_WIDTH,handleBarZ],
+    end: [BAR_RADIUS+BAR_CENTER_X+HINGE_RADIUS,.5*BAR_GRIP_WIDTH,handleBarZ],
+    radius: HINGE_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cylinder({
+    start: [BAR_RADIUS+BAR_CENTER_X+HINGE_RADIUS,-.6*BAR_GRIP_WIDTH,handleBarZ],
+    end: [BAR_RADIUS+BAR_CENTER_X+HINGE_RADIUS,.6*BAR_GRIP_WIDTH,handleBarZ],
+    radius: NUMBER_FOUR_SCREW_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cube({
+    center: [BAR_RADIUS+BAR_CENTER_X+HINGE_RADIUS,(BAR_GRIP_WIDTH+HINGE_WIDTH)/4,handleBarZ],
+    radius: [2*HINGE_RADIUS, (BAR_GRIP_WIDTH-HINGE_WIDTH)/4+2*PART_TOLERANCE, HINGE_RADIUS]
+  })).subtract(CSG.cube({
+    center: [BAR_RADIUS+BAR_CENTER_X+HINGE_RADIUS,-(BAR_GRIP_WIDTH+HINGE_WIDTH)/4,handleBarZ],
+    radius: [2*HINGE_RADIUS, (BAR_GRIP_WIDTH-HINGE_WIDTH)/4+2*PART_TOLERANCE, HINGE_RADIUS]
+  }))
+
+  // BEVEL HINGE FOR BETTER PRINTING
+  var ctx = new THREE.Path();
+  ctx.moveTo(0,0);
+  ctx.lineTo(AXEL_WIDTH,0)
+  ctx.lineTo(AXEL_WIDTH,2*AXEL_WIDTH/3)
+  var bevel = ctx.toShapes()[0].extrude({amount:AXEL_WIDTH, bevelEnabled:false, curveSegments:CYLINDER_QUALITY/4});
+  rotateGeometry(bevel, 0, -Math.PI/2, -0)
+  translateGeometry(bevel, BAR_CENTER_X + LOWER_GRIP_RADIUS - PART_TOLERANCE + AXEL_WIDTH - BAR_RADIUS, 
+    -HINGE_WIDTH/2+PART_TOLERANCE, -AXEL_WIDTH/2 - 3*PART_TOLERANCE);
+  hinge = hinge.subtract(THREE.CSG.toCSG(bevel));
+
+  var hingeGeometry = THREE.CSG.fromCSG(hinge);
+  if (PREPARE_FOR_PRINTING)
+    rotateGeometry(hingeGeometry, Math.PI/2, 0, 0 );
+  var hingeMesh = new THREE.Mesh(hingeGeometry, material('#ff66ff'));
+  a3d.cad.addMesh(hingeMesh, 'hinge')
+}
+
+function addBase() {
+  var fastenerWidth = BASE_WIDTH/6;
+  var fastenerOffset = BASE_WIDTH/2 - fastenerWidth;
+  var yOffset = -AXEL_WIDTH/2 + HANDLE_WIDTH + NUMBER_FOUR_NUT_RADIUS + PART_TOLERANCE;
+  var zOffset =  -AXEL_RADIUS- POP_HOLDER_HEIGHT - BASE_DEPTH/2;
+
+  var handleBarZ = -AXEL_RADIUS-POP_HOLDER_HEIGHT-BASE_DEPTH-BAR_GRIP_UPPER_DEPTH;
+  var screwX = -BASE_WIDTH/4 + (BAR_CENTER_X - BAR_RADIUS)/2;
+
+  // TOP
+  var base = CSG.cube({
+    center: [0, 0, zOffset],
+    radius: [BASE_WIDTH/2, AXEL_WIDTH/2 - HANDLE_WIDTH - PART_TOLERANCE, BASE_DEPTH/2]
+  })
+  // FASTENER KNOCKOUTS
+  .subtract(CSG.cube({
+    center: [fastenerOffset+1, yOffset, zOffset],
+    radius: [fastenerWidth+1, NUMBER_FOUR_NUT_RADIUS, 1.2*BASE_DEPTH]
+  })).subtract(CSG.cube({
+    center: [-fastenerOffset-1, yOffset, zOffset],
+    radius: [fastenerWidth+1, NUMBER_FOUR_NUT_RADIUS, 1.2*BASE_DEPTH]
+  })).subtract(CSG.cube({
+    center: [fastenerOffset+1, -yOffset, zOffset],
+    radius: [fastenerWidth+1, NUMBER_FOUR_NUT_RADIUS, 1.2*BASE_DEPTH]
+  })).subtract(CSG.cube({
+    center: [-fastenerOffset-1, -yOffset, zOffset],
+    radius: [fastenerWidth+1, NUMBER_FOUR_NUT_RADIUS, 1.2*BASE_DEPTH]
+  }))
+  // FASTENER SCREW HOLES
+  .union(CSG.cylinder({
+    start: [fastenerOffset-fastenerWidth, yOffset, zOffset+BASE_DEPTH/2 - NUMBER_FOUR_NUT_RADIUS],
+    end: [-fastenerOffset+fastenerWidth, yOffset, zOffset+BASE_DEPTH/2 - NUMBER_FOUR_NUT_RADIUS],
+    radius: NUMBER_FOUR_NUT_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).union(CSG.cylinder({
+    start: [fastenerOffset-fastenerWidth, -yOffset, zOffset+BASE_DEPTH/2 - NUMBER_FOUR_NUT_RADIUS],
+    end: [-fastenerOffset+fastenerWidth, -yOffset, zOffset+BASE_DEPTH/2 - NUMBER_FOUR_NUT_RADIUS],
+    radius: NUMBER_FOUR_NUT_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cylinder({
+    start: [fastenerOffset-fastenerWidth, yOffset, zOffset+BASE_DEPTH/2 - NUMBER_FOUR_NUT_RADIUS],
+    end: [-fastenerOffset+fastenerWidth, yOffset, zOffset+BASE_DEPTH/2 - NUMBER_FOUR_NUT_RADIUS],
+    radius: NUMBER_FOUR_SCREW_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cylinder({
+    start: [fastenerOffset-fastenerWidth, -yOffset, zOffset+BASE_DEPTH/2 - NUMBER_FOUR_NUT_RADIUS],
+    end: [-fastenerOffset+fastenerWidth, -yOffset, zOffset+BASE_DEPTH/2 - NUMBER_FOUR_NUT_RADIUS],
+    radius: NUMBER_FOUR_SCREW_RADIUS,
+    slices: CYLINDER_QUALITY
+  }))
+
+  // HANDLEBAR ATTACHMENT
+  .union(CSG.cube({
+    center: [0,0, -AXEL_RADIUS - POP_HOLDER_HEIGHT - BASE_DEPTH - BAR_GRIP_UPPER_DEPTH/2 + .2],
+    radius: [BASE_WIDTH/2, BAR_GRIP_WIDTH/2, BAR_GRIP_UPPER_DEPTH/2 + .1]
+  })).union(CSG.cylinder({
+    start: [BAR_CENTER_X, -BAR_GRIP_WIDTH/2,-AXEL_RADIUS-POP_HOLDER_HEIGHT-BASE_DEPTH-BAR_GRIP_UPPER_DEPTH],
+    end: [BAR_CENTER_X, BAR_GRIP_WIDTH/2,handleBarZ],
+    radius: UPPER_GRIP_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cube({
+    center: [0,0, -AXEL_RADIUS - POP_HOLDER_HEIGHT - BASE_DEPTH - 2*BAR_GRIP_UPPER_DEPTH],
+    radius: [BASE_WIDTH, AXEL_WIDTH/2, BAR_GRIP_UPPER_DEPTH]
+  })).subtract(CSG.cylinder({
+    start: [BAR_CENTER_X, -2*BAR_GRIP_WIDTH,handleBarZ],
+    end: [BAR_CENTER_X, 2*BAR_GRIP_WIDTH,handleBarZ],
+    radius: BAR_RADIUS,
+    slices: CYLINDER_QUALITY    
+  }))
+  // HEAD AND SCREW HOLE
+  .union(CSG.cylinder({
+    start: [HINGE_SCREW_X, 0, -AXEL_RADIUS-POP_HOLDER_HEIGHT- LOWER_GRIP_NUT_DEPTH],
+    end: [HINGE_SCREW_X, 0, handleBarZ],
+    radius: NUMBER_FOUR_NUT_OUTER_RADIUS,
+    slices: CYLINDER_QUALITY
+  }))
+  .subtract(CSG.cylinder({
+    start: [HINGE_SCREW_X, 0, 0],
+    end: [HINGE_SCREW_X, 0, -AXEL_RADIUS-POP_HOLDER_HEIGHT- LOWER_GRIP_NUT_DEPTH],
+    radius: NUMBER_FOUR_NUT_OUTER_RADIUS,
+    slices: CYLINDER_QUALITY    
+  }))
+  .subtract(CSG.cylinder({
+    start: [HINGE_SCREW_X, 0, 0],
+    end: [HINGE_SCREW_X, 0, handleBarZ - 1],
+    radius: NUMBER_FOUR_SCREW_OUTER_RADIUS,
+    slices: CYLINDER_QUALITY    
+  }))
+  // HINGE
+  .union(CSG.cylinder({
+    start: [BAR_RADIUS+BAR_CENTER_X+HINGE_RADIUS,-.5*BAR_GRIP_WIDTH,handleBarZ],
+    end: [BAR_RADIUS+BAR_CENTER_X+HINGE_RADIUS,.5*BAR_GRIP_WIDTH,handleBarZ],
+    radius: HINGE_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cylinder({
+    start: [BAR_RADIUS+BAR_CENTER_X+HINGE_RADIUS,-.6*BAR_GRIP_WIDTH,handleBarZ],
+    end: [BAR_RADIUS+BAR_CENTER_X+HINGE_RADIUS,.6*BAR_GRIP_WIDTH,handleBarZ],
+    radius: NUMBER_FOUR_SCREW_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cube({
+    center: [BAR_RADIUS+BAR_CENTER_X+HINGE_RADIUS,0,handleBarZ],
+    radius: [2*HINGE_RADIUS, HINGE_WIDTH/2, HINGE_RADIUS]
+  }))
+
+  var baseGeometry = THREE.CSG.fromCSG(base);
+  if (PREPARE_FOR_PRINTING) {
+    rotateGeometry(baseGeometry, Math.PI, 0, 0 );
+    translateGeometry( baseGeometry, AXEL_WIDTH, 0, 0 );
+  }
+  var baseMesh = new THREE.Mesh(baseGeometry, material('#ff6666'));
+  a3d.cad.addMesh(baseMesh, 'base')
+}
+
+function addAxelFastener(gearProps) {
+  var fastenerWidth = BASE_WIDTH/6;
+  var fastenerOffset = BASE_WIDTH/2 - fastenerWidth;
+  var zOffset =  POP_HOLDER_CENTER.z - POP_HOLDER_HEIGHT/2 - PART_TOLERANCE;
+  var handleBarZ = -AXEL_RADIUS-POP_HOLDER_HEIGHT-BASE_DEPTH-BAR_GRIP_UPPER_DEPTH;
+
+  var top = -AXEL_WIDTH/2 + GEAR_OFFSET - PART_TOLERANCE;
+  var bottom = -AXEL_WIDTH/2 + HANDLE_WIDTH + 3*PART_TOLERANCE;
+  var width = top-bottom;
+  var yOffset = bottom + width/2;
+  var outerRadius = AXEL_RADIUS + PART_TOLERANCE + AXEL_FASTENER_WIDTH;
+  
+  function makeFastener(yside) {
+    var fastener = CSG.cylinder({
+      start: [0, yside*bottom, AXEL_CENTER.z],
+      end: [0, yside*top, AXEL_CENTER.z],
+      radius: outerRadius,
+      slices: CYLINDER_QUALITY
+    }).union(CSG.cube( cubeFromCorners(
+      [-outerRadius, yside*bottom, AXEL_CENTER.z],
+      [outerRadius, yside*(bottom+width), zOffset]
+    ))).union(CSG.cube(cubeFromCorners(
+      [-BASE_WIDTH/2,yside*top, -AXEL_RADIUS+(BASE_WIDTH/2-outerRadius)],
+      [outerRadius, yside*bottom, zOffset]
+    ))).subtract(CSG.cylinder({
+      start: [0, yside*(bottom-1), AXEL_CENTER.z],
+      end: [0, yside*(top+1), AXEL_CENTER.z],
+      radius: AXEL_RADIUS+PART_TOLERANCE,
+      slices: CYLINDER_QUALITY
+    })).subtract(CSG.cube(cubeFromCorners(
+      [-AXEL_RADIUS*.75, yside*(top+1), 0],
+      [AXEL_RADIUS*.5, yside*(bottom-1), -AXEL_RADIUS-POP_HOLDER_HEIGHT-1]
+    ))).subtract(CSG.cylinder({
+      start: [-BASE_WIDTH/2, yside*(top+1), -AXEL_RADIUS+(BASE_WIDTH/2-outerRadius)],
+      end: [-BASE_WIDTH/2, yside*(bottom-1), -AXEL_RADIUS+(BASE_WIDTH/2-outerRadius)],
+      radius: BASE_WIDTH/2-outerRadius,
+      slices: CYLINDER_QUALITY
+    })).subtract(CSG.cube({
+      center: [0, yside*(top+1), (-AXEL_RADIUS-POP_HOLDER_HEIGHT-1)/2],
+      radius: [BASE_WIDTH/6, bottom-1, (-AXEL_RADIUS-POP_HOLDER_HEIGHT-1)/2]
+    }))
+    // ATTACHMENT
+    .union(CSG.cylinder({
+      start: [BASE_WIDTH/2, yside*(yOffset - width/2 + NUMBER_FOUR_NUT_RADIUS), zOffset - NUMBER_FOUR_NUT_RADIUS],
+      end: [-BASE_WIDTH/2, yside*(yOffset - width/2 + NUMBER_FOUR_NUT_RADIUS), zOffset - NUMBER_FOUR_NUT_RADIUS],
+      radius: NUMBER_FOUR_NUT_RADIUS,
+      slices: CYLINDER_QUALITY
+    })).union(CSG.cube({
+      center: [0, yside*(yOffset - width/2 + NUMBER_FOUR_NUT_RADIUS), zOffset - BASE_DEPTH/2],
+      radius: [BASE_WIDTH/2, NUMBER_FOUR_NUT_RADIUS, BASE_DEPTH/2]
+    })).subtract(CSG.cube({
+      center: [0, yside*(yOffset - width/2 + NUMBER_FOUR_NUT_RADIUS), zOffset - NUMBER_FOUR_NUT_RADIUS],
+      radius: [BASE_WIDTH/6, NUMBER_FOUR_NUT_RADIUS, NUMBER_FOUR_NUT_RADIUS]
+    })).subtract(CSG.cylinder({
+      start: [BASE_WIDTH/2, yside*(yOffset - width/2 + NUMBER_FOUR_NUT_RADIUS), zOffset - NUMBER_FOUR_NUT_RADIUS],
+      end: [-BASE_WIDTH/2, yside*(yOffset - width/2 + NUMBER_FOUR_NUT_RADIUS), zOffset - NUMBER_FOUR_NUT_RADIUS],
+      radius: NUMBER_FOUR_SCREW_RADIUS,
+      slices: CYLINDER_QUALITY
+    }))
+    return fastener;
+  }
+
+  // RIGHT FASTENER
+  var rightFastener = makeFastener(-1);
+  
+  // lip
+  rightFastener = rightFastener.union(CSG.cube({
+    center: [0,-yOffset - width/2, POP_HOLDER_CENTER.z + 3*POP_HOLDER_HEIGHT/4 + 5*PART_TOLERANCE],
+    radius: [outerRadius,2, POP_HOLDER_HEIGHT/4]
+  })).subtract(CSG.cube(cubeFromCorners(
+    [-AXEL_RADIUS*.75, -top-4, 0],
+    [AXEL_RADIUS*.5, -bottom+4, -AXEL_RADIUS-POP_HOLDER_HEIGHT-1]
+  ))).subtract(CSG.cylinder({
+    start: [0, -bottom+3, AXEL_CENTER.z],
+    end: [0, -top-3, AXEL_CENTER.z],
+    radius: AXEL_RADIUS+PART_TOLERANCE,
+    slices: CYLINDER_QUALITY
+  }))
+  // leave room for handlebar
+  .subtract(CSG.cylinder({
+    start: [BAR_CENTER_X, 2*BAR_GRIP_WIDTH,handleBarZ],
+    end: [BAR_CENTER_X, -2*BAR_GRIP_WIDTH,handleBarZ],
+    radius: BAR_RADIUS,
+    slices: CYLINDER_QUALITY    
+  }))
+  // clip attachment for easier assembly
+  .subtract(CSG.cube({
+    center: [0, -yOffset + width/2 - NUMBER_FOUR_NUT_RADIUS, zOffset - NUMBER_FOUR_NUT_RADIUS],
+    radius: [BASE_WIDTH/6, NUMBER_FOUR_NUT_RADIUS, NUMBER_FOUR_NUT_RADIUS]
+  })).subtract(CSG.cube({
+    center: [0,-yOffset + width/2 - 2*NUMBER_FOUR_NUT_RADIUS,zOffset],
+    radius: [BASE_WIDTH/2,1.5,BASE_WIDTH/2]
+  }))
+
+
+  var rightFastenerGeometry = THREE.CSG.fromCSG(rightFastener);
+  if (PREPARE_FOR_PRINTING) {
+    rotateGeometry( rightFastenerGeometry, -Math.PI/2, 0, 0);
+    translateGeometry( rightFastenerGeometry, AXEL_WIDTH/2, -AXEL_WIDTH/2, 0 );
+  }
+  var fastenerMesh = new THREE.Mesh(rightFastenerGeometry, material('#66ff66'));
+  a3d.cad.addMesh(fastenerMesh, 'right fastener')
+
+  // GEAR CONE
+  var fastener = makeFastener(1);
+  var gearCone = new THREE.CylinderGeometry(2*gearProps.outerRadius, 0, 2*gearProps.outerRadius, CYLINDER_QUALITY );
+  translateGeometry(gearCone,0,-AXEL_WIDTH/2+GEAR_OFFSET-5*PART_TOLERANCE, AXEL_CENTER.z);
+  fastener = fastener.subtract(THREE.CSG.toCSG(gearCone))
+  // leave room for handlebar
+  .subtract(CSG.cylinder({
+    start: [BAR_CENTER_X, -2*BAR_GRIP_WIDTH,handleBarZ],
+    end: [BAR_CENTER_X, 2*BAR_GRIP_WIDTH,handleBarZ],
+    radius: BAR_RADIUS,
+    slices: CYLINDER_QUALITY    
+  }))
+
+  var fastenerGeometry = THREE.CSG.fromCSG(fastener);
+  if (PREPARE_FOR_PRINTING) {
+    rotateGeometry(fastenerGeometry, Math.PI/2 );
+    translateGeometry( fastenerGeometry, 0, -AXEL_WIDTH, 0, 0 );
+  }
+  var fastenerMesh = new THREE.Mesh(fastenerGeometry, material('#66ff66'));
+  a3d.cad.addMesh(fastenerMesh, 'left fastener')
+}
+
+function addPopHolder(gearProps) {
+  var rackWidth = 1.1*GEAR_WIDTH
+
+  var base = CSG.cube({
+    center: [POP_HOLDER_CENTER.x, POP_HOLDER_CENTER.y, POP_HOLDER_CENTER.z - PART_TOLERANCE/2],
+    radius: [POP_HOLDER_LENGTH/2, POP_HOLDER_WIDTH/2, POP_HOLDER_HEIGHT/2 - PART_TOLERANCE/2]
+  })
+
+  // holes
+  var holeXSep = 3;
+  var holeXRadius = (POP_HOLDER_LENGTH - BASKET_HEIGHT - POP_HOLDER_STOP_WIDTH - 11*holeXSep) / 12;
+  var ctx = roundedRect(-holeXRadius, POP_HOLDER_WIDTH/2 - 3, 
+                        0, -POP_HOLDER_HOLE_RADIUS, {all:3})
+  var hole = ctx.toShapes()[0].extrude({amount:4*POP_HOLDER_HEIGHT, bevelEnabled:false, curveSegments:CYLINDER_QUALITY/4});
+
+
+  translateGeometry(hole, POP_HOLDER_CENTER.x+POP_HOLDER_LENGTH/2 - POP_HOLDER_STOP_WIDTH, 0, 
+                    POP_HOLDER_CENTER.z-2*POP_HOLDER_HEIGHT );
+  for (var i=0; i<12; i++) {
+    base = base.subtract(THREE.CSG.toCSG(hole));
+    translateGeometry(hole, -holeXRadius-holeXSep, 0, 0);
+  }
+
+  var rack = a3d.gear.rack(gearProps, POP_HOLDER_LENGTH - BASKET_HEIGHT, 10, rackWidth)
+  rotateGeometry(rack, 0, -Math.PI/2, 0);
+  rotateGeometry(rack, 0, 0, Math.PI/2);
+  translateGeometry(rack, POP_HOLDER_CENTER.x + POP_HOLDER_LENGTH/2, 
+      -POP_HOLDER_WIDTH/2 + 1.05*GEAR_WIDTH, 
+      -AXEL_RADIUS-RACK_DEPRESSION - PART_TOLERANCE )
+
+  // BASKET
+  var outerY = POP_HOLDER_WIDTH/2;
+  var innerY = (POP_HOLDER_WIDTH-BASKET_DEPTH)/2;
+
+  ctx = roundedRect(-1,outerY,BASKET_DEPTH,-outerY, {r:BASKET_DEPTH/2})
+  var basket = ctx.toShapes()[0].extrude({amount:BASKET_HEIGHT, bevelEnabled:false, 
+                                          curveSegments:CYLINDER_QUALITY/4});
+  rotateGeometry(basket, 0, -Math.PI/2, 0);
+  translateGeometry(basket, POP_HOLDER_CENTER.x -POP_HOLDER_LENGTH/2+BASKET_HEIGHT, 0, POP_HOLDER_CENTER.z+POP_HOLDER_HEIGHT/2  - PART_TOLERANCE/2);
+  var basketCSG = THREE.CSG.toCSG(basket);
+
+  // BASKET HOLE
+  var outerY = POP_HOLDER_WIDTH/2 - BASKET_THICKNESS;
+  var outerX = BASKET_DEPTH - BASKET_THICKNESS
+
+  ctx = roundedRect(0,outerY,outerX,-outerY, {all:outerX/2});
+
+  var basketHole = ctx.toShapes()[0].extrude({amount:BASKET_HEIGHT + 2, bevelEnabled:false, curveSegments:CYLINDER_QUALITY/4});
+  rotateGeometry(basketHole, 0, -Math.PI/2, 0);
+  translateGeometry(basketHole, POP_HOLDER_CENTER.x-POP_HOLDER_LENGTH/2+BASKET_HEIGHT+1, 0, POP_HOLDER_CENTER.z+POP_HOLDER_HEIGHT/2 - PART_TOLERANCE/2);
+  var basketCSG = basketCSG.subtract(THREE.CSG.toCSG(basketHole));
+
+  var stop = CSG.cube({
+    center: [POP_HOLDER_CENTER.x + POP_HOLDER_LENGTH/2 - POP_HOLDER_STOP_WIDTH/2, 
+              POP_HOLDER_CENTER.y, POP_HOLDER_CENTER.z],
+    radius: [POP_HOLDER_STOP_WIDTH/2, AXEL_WIDTH/2-HANDLE_WIDTH, POP_HOLDER_HEIGHT/2 - PART_TOLERANCE/2]
+  })
+
+  var holder = base
+    .subtract( THREE.CSG.toCSG(rack) )
+    .union( basketCSG )
+//    .union( stop )
+  var holderGeometry = THREE.CSG.fromCSG(holder);
+  if (PREPARE_FOR_PRINTING) 
+    rotateGeometry( holderGeometry, 0, 0, Math.PI/4);
+  holderMesh = new THREE.Mesh(holderGeometry, material('#ffff66') );
+
+  a3d.cad.addMesh(holderMesh, 'holder'); 
+}
+
+
+function addControl( gearProps ) {
+   var axel = CSG.cylinder({
+    start: [0, -AXEL_WIDTH/2, AXEL_CENTER.z],
+    end: [0, AXEL_WIDTH/2, AXEL_CENTER.z],
+    radius: AXEL_RADIUS,
+    slices: CYLINDER_QUALITY
+  });
+
+  var ctx = roundedRect(-HANDLE_RADIUS,HANDLE_WIDTH/2,0,-HANDLE_WIDTH/2,{l:HANDLE_WIDTH/4}, {r:true})
+  var points = ctx.getPoints( CYLINDER_QUALITY/4 );
+  for (var i=0,p; p = points[i]; i++) {
+    p.z = p.y;
+    p.y = 0;
+  }
+  var handleGeometry = new THREE.LatheGeometry( points, CYLINDER_QUALITY );
+
+  var rightHandle = handleGeometry.clone();
+  rotateGeometry( rightHandle, Math.PI/2, 0, 0 );
+  translateGeometry(rightHandle, 0, (AXEL_WIDTH-HANDLE_WIDTH)/2, AXEL_CENTER.z )
+  rightHandle = THREE.CSG.toCSG(rightHandle);
+
+  var leftHandle = handleGeometry.clone();
+  rotateGeometry( leftHandle, Math.PI/2, 0, 0 );
+  translateGeometry(leftHandle, 0, -(AXEL_WIDTH-HANDLE_WIDTH)/2, AXEL_CENTER.z )
+  leftHandle = THREE.CSG.toCSG(leftHandle);
+
+  // GEAR
+  var controlGear = a3d.gear.gear(gearProps, 2*GEAR_WIDTH, 0)
+  rotateGeometry(controlGear, -Math.PI / 2, 0, 0 );
+  translateGeometry(controlGear, 0, -AXEL_WIDTH/2 + GEAR_OFFSET - GEAR_WIDTH - PART_TOLERANCE, AXEL_CENTER.z )
+
+  var gearCone = new THREE.CylinderGeometry(2*gearProps.outerRadius, 0, 2*gearProps.outerRadius, CYLINDER_QUALITY );
+  translateGeometry(gearCone,0,-AXEL_WIDTH/2+GEAR_OFFSET,AXEL_CENTER.z);
+  var controlGearCSG = THREE.CSG.toCSG(controlGear).intersect(THREE.CSG.toCSG(gearCone));
+
+  var control = axel
+    .union(rightHandle)
+    .union(leftHandle)
+    .union(controlGearCSG);
+
+  // TOP HANDLE SUPPORT
+  if (PREPARE_FOR_PRINTING) {
+    var support = CSG.cube({
+      center: [0, AXEL_WIDTH/4-HANDLE_WIDTH/2, 0],
+      radius: [HANDLE_RADIUS, AXEL_WIDTH/4 - HANDLE_WIDTH/2, .2]
+    })
+    var base = THREE.CSG.fromCSG(support);
+    for (var i=1; i<8; i++) {
+      rotateGeometry(base,0,Math.PI/8,0);
+      support = support.union(THREE.CSG.toCSG(base));
+    }
+
+    var coneHeight= HANDLE_RADIUS - HANDLE_WIDTH/4;
+    var supportCone = new THREE.CylinderGeometry(coneHeight, 0, coneHeight, CYLINDER_QUALITY );
+    translateGeometry(supportCone,0,AXEL_WIDTH/2 - HANDLE_WIDTH - coneHeight/2, 0);
+
+    var intersection = support.intersect(THREE.CSG.toCSG(supportCone));
+
+    intersectionGeometry = THREE.CSG.fromCSG(intersection);
+    translateGeometry(intersectionGeometry, 0, 0, AXEL_CENTER.z);
+
+    control = control.union(THREE.CSG.toCSG(intersectionGeometry));
+  }
+
+  var controlGeometry = THREE.CSG.fromCSG(control);
+  if (PREPARE_FOR_PRINTING) {
+    rotateGeometry(controlGeometry, Math.PI/2, 0, 0);
+    translateGeometry(controlGeometry, -AXEL_WIDTH, 0, 0 );
+  }
+  controlMesh = new THREE.Mesh(controlGeometry, material('#66aaff') );
+  a3d.cad.addMesh(controlMesh, 'control'); 
+}
+
+function roundedRect(x1,y1,x2,y2,radii, open) {
+  var ctx = new THREE.Path()
+  radii = radii || {};
+  open = open || {};
+  if (radii.all) radii.tl=radii.tr=radii.bl=radii.br=radii.all;
+  if (radii.t) radii.tl=radii.tr=radii.t;
+  if (radii.l) radii.tl=radii.bl=radii.l;
+  if (radii.b) radii.bl=radii.br=radii.b;
+  if (radii.r) radii.tr=radii.br=radii.r;
+
+  ctx.moveTo(x2-(radii.br||0),y2);
+  ctx[open.b?'moveTo':'lineTo'](x1+(radii.bl||0),y2);
+  if (radii.bl) ctx.quadraticCurveTo(x1,y2,x1,y2+radii.bl);
+  ctx[open.l?'moveTo':'lineTo'](x1,y1-(radii.tl||0));
+  if (radii.tl) ctx.quadraticCurveTo(x1,y1,x1+radii.tl,y1);
+
+  ctx[open.t?'moveTo':'lineTo'](x2 - (radii.tr || 0), y1);
+  if (radii.tr) ctx.quadraticCurveTo(x2,y1,x2,y1-radii.tr);
+  ctx[open.r?'moveTo':'lineTo'](x2,y2+(radii.br||0));
+  if (radii.br) ctx.quadraticCurveTo(x2,y2,x2-radii.br,y2);
+
+  return ctx;
+}
+
+function zigzag( c1, c2, spacing, width ) {
+  var left = Math.min(c1[0],c2[0]) + width/2;
+  var right = Math.max(c1[0],c2[0]) - width/2;
+  var front = Math.min(c1[1],c2[1]) + width/2;
+  var back = Math.max(c1[1],c2[1]) - width/2;
+  var bottom = Math.min(c1[2],c2[2]);
+  var top = Math.max(c1[2],c2[2]);
+  var steps = Math.floor((back - front)/spacing);
+  var spacing = (back-front)/steps;
+  var structure = CSG.cube({
+    center:[left+(right-left)/2,front,bottom+(top-bottom)/2],
+    radius:[(right-left)/2+width/2,width/2,(top-bottom)/2]
+  })
+  for (var i=1; i<=steps; i++) {
+    structure = structure.union(CSG.cube({
+      center:[i%2==0 ? right : left, front+spacing*(i-.5), bottom+(top-bottom)/2],
+      radius:[width/2, spacing/2, (top-bottom)/2]
+    })).union(CSG.cube({
+      center:[left+(right-left)/2,front+spacing*i,bottom+(top-bottom)/2],
+      radius:[(right-left)/2+width/2,width/2,(top-bottom)/2]
+    }))
+  }
+  return structure;
+}
+
+function cubeFromCorners(c1, c2) {
+  return {
+    center: c1.map(function(c,i) {return c+(c2[i]-c)/2}),
+    radius: c1.map(function(c,i) {return Math.abs(c2[i]-c)/2}),
+  }
+}
+
+function material( color ) {
+  return new THREE.MeshPhongMaterial( { color: color } );
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+function scaleGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeScale(x,y,z);
+  g.applyMatrix(matrix);
+}
+
+
+    </script>
+
+  </body>
+</html>

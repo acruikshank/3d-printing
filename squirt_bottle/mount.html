@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>squirt automator</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="FileSaver.js"></script>
+    <script src="three.min.js"></script>
+    <script src="csg.js"></script>
+    <script src="orbit_controls.js"></script>
+    <script src="ThreeCSG.js"></script>
+    <script src="cad.js"></script>
+    <script src="../manifold/manifold.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+// All dimensions in millimeters
+var PREPARE_FOR_PRINTING = true;
+var CYLINDER_QUALITY = PREPARE_FOR_PRINTING ? 60 : 40;
+
+var BASE_DEPTH = 8;
+var OUTER_X_OFFSET = -5;
+var OUTER_Y_OFFSET = -9;
+var SERVO_DEPTH = 40.5;
+var SERVO_HEIGHT = 20;
+var SERVO_LENGTH = 24;
+var SERVO_FLANGE_DEPTH = 9;
+var SERVO_RADIUS = 25;
+var INNER_RADIUS = 24;
+var OUTER_RADIUS = 35;
+var SERVO_X = -8.5;
+var NUMBER_FOUR_SCREW_RADIUS = 1.4;
+var SCREW_LENGTH = 26;
+var SCREW_SEPARATION = 10;
+
+
+var M = manifold;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  var material = new THREE.MeshPhongMaterial( { color: 0xffffff } );
+
+  var maxHeight = BASE_DEPTH + SERVO_DEPTH + 2*SERVO_FLANGE_DEPTH;
+  var mount = CSG.cylinder({
+      start: [OUTER_X_OFFSET,OUTER_Y_OFFSET,0],
+      end: [OUTER_X_OFFSET,OUTER_Y_OFFSET,maxHeight],
+      radius: OUTER_RADIUS,
+      slices: CYLINDER_QUALITY
+    }).subtract(CSG.cylinder({
+      start: [0,0,-1],
+      end: [0,0,maxHeight + 1],
+      radius: INNER_RADIUS,
+      slices: CYLINDER_QUALITY
+    }))
+    .subtract(CSG.cube({
+      center: [OUTER_RADIUS,OUTER_Y_OFFSET,maxHeight],
+      radius: [OUTER_RADIUS - SERVO_X, OUTER_RADIUS + 1, maxHeight - BASE_DEPTH]
+    }))
+    .subtract(CSG.cube({
+      center: [SERVO_X-SERVO_LENGTH/2, -INNER_RADIUS-SERVO_HEIGHT/2,BASE_DEPTH + SERVO_FLANGE_DEPTH + SERVO_DEPTH/2],
+      radius: [SERVO_LENGTH, SERVO_HEIGHT/2, SERVO_DEPTH/2]
+    }))
+    .subtract(screw(-INNER_RADIUS-SERVO_HEIGHT/2 - SCREW_SEPARATION/2))
+    .subtract(screw(-INNER_RADIUS-SERVO_HEIGHT/2 + SCREW_SEPARATION/2))
+    .subtract(slice())
+
+  var mesh = new THREE.Mesh(THREE.CSG.fromCSG(mount), material );
+  a3d.cad.addMesh(mesh, 'mount')
+}
+
+function screw(y) {
+  return CSG.cylinder({
+    start: [SERVO_X + 1, y, BASE_DEPTH + SERVO_FLANGE_DEPTH/2 ],
+    end: [SERVO_X - SCREW_LENGTH, y, BASE_DEPTH + SERVO_FLANGE_DEPTH/2 ],
+    radius: NUMBER_FOUR_SCREW_RADIUS,
+    slices: CYLINDER_QUALITY/4
+  })
+}
+
+function slice() {
+  var csg = M.CSGRenderer();
+  var splines = [M.Path([-2*OUTER_RADIUS,0,0]).line([2*OUTER_RADIUS,0,0])];
+  var vertices = M.RibParameterizedPath( M.RibTransform(splines, 5+ CYLINDER_QUALITY/4), profile, CYLINDER_QUALITY );
+  M.lift(vertices).generate( M.facers( M.skin, M.closeEdge, M.capTop, M.capBottom ) ).render(csg.renderer);
+  return csg.csgObject();
+
+  function profile(vs) {
+    var v = vs[0];
+    return M.Path([v.x,OUTER_RADIUS,BASE_DEPTH])
+      .line([v.x,INNER_RADIUS,BASE_DEPTH])
+      .curve([[v.x,0,BASE_DEPTH],[v.x,-OUTER_RADIUS+OUTER_Y_OFFSET,BASE_DEPTH + OUTER_RADIUS-OUTER_Y_OFFSET]], CYLINDER_QUALITY/4)
+      .line([v.x,-OUTER_RADIUS+OUTER_Y_OFFSET,200])
+      .line([v.x,OUTER_RADIUS,200])
+  }
+
+}
+
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+
+    </script>
+
+  </body>
+</html>

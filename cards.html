@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Cards</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="FileSaver.js"></script>
+    <script src="three.min.js"></script>
+    <script src="csg.js"></script>
+    <script src="orbit_controls.js"></script>
+    <script src="ThreeCSG.js"></script>
+    <script src="cad.js"></script>
+    <script src="../manifold/manifold.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+var M = manifold;
+
+var PREPARE_FOR_PRINTING = true;
+
+var CARD_WIDTH = 20;
+var CARD_HEIGHT = 36;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  var stackDelta = 6;
+  var cardCount = 40;
+  var stackStart = stackDelta * cardCount / 2;
+  for (var i=0; i<cardCount; i++) {
+    addCard([i*stackDelta - stackStart, CARD_WIDTH/2,CARD_HEIGHT/2],
+      [i*stackDelta - stackStart, CARD_WIDTH/2,-CARD_HEIGHT/2],
+      [i*stackDelta - stackStart,-CARD_WIDTH/2,-CARD_HEIGHT/2],
+      [i*stackDelta - stackStart, -CARD_WIDTH/2,CARD_HEIGHT/2] );
+  }
+}
+
+function addCard( p1, p2, p3, p4 ) {
+  var top = M.ThreeJSRenderer();
+  var bottom = M.ThreeJSRenderer();
+
+  var card = M.Path(p1).line(p2).line(p3).line(p4);
+
+  M.lift(card.vertices(4,1)).generate(M.capTop).render(top.renderer);
+  M.lift(card.vertices(4,1)).generate(M.reverse(M.capTop)).render(bottom.renderer);
+
+  top.geometry.computeBoundingSphere();
+  top.geometry.computeFaceNormals();
+  bottom.geometry.computeBoundingSphere();
+  bottom.geometry.computeFaceNormals();
+
+  addMesh(top.geometry, '#ff0000');
+  addMesh(bottom.geometry, '#ffffff');
+}
+
+function lerp(a, b, x) {
+  return a + x*(b-a);
+}
+
+function addMesh( geometry, color, name ) {
+  var material = new THREE.MeshPhongMaterial( { color: color } );
+  var mesh = new THREE.Mesh(geometry, material );
+  a3d.cad.addMesh(mesh, name, true)
+}
+
+
+    </script>
+  </body>
+</html>
+

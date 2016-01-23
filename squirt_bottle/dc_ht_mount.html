@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>squirt automator - dc high torque mount</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="../FileSaver.js"></script>
+    <script src="../three.min.js"></script>
+    <script src="../csg.js"></script>
+    <script src="../orbit_controls.js"></script>
+    <script src="../ThreeCSG.js"></script>
+    <script src="../cad.js"></script>
+    <script src="../../manifold/manifold.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+// All dimensions in millimeters
+var PREPARE_FOR_PRINTING = true;
+var CYLINDER_QUALITY = PREPARE_FOR_PRINTING ? 100 : 30;
+
+var MOTOR_RADIUS = 13.5;
+var MOTOR_OUTER_RADIUS = MOTOR_RADIUS + 2.5;
+var MOTOR_DEPTH = 21;
+var SCREW_OFFSET = { x: 3, y: -20 };
+var SCREW_OUTER_Y = SCREW_OFFSET.y - 4;
+var ARM_LENGTH = 48;
+var BASE_DEPTH = 4;
+var ARM_HEIGHT = 10;
+
+var NECK_X = 30;
+var NECK_RADIUS = 12;
+var NECK_CENTER_Z = BASE_DEPTH - 6 + NECK_RADIUS;
+
+var BIG_SCREW_RADIUS = 1.8;
+var NUMBER_FOUR_SCREW_OUTER_RADIUS = 1.8;
+var DRIVE_HOLE_RADIUS = 5;
+var MOUNT_SCREW_NEAR_OFFSET = 8;
+var MOUNT_SCREW_FAR_OFFSET = 10;
+
+
+var M = manifold;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  var material = new THREE.MeshPhongMaterial( { color: 0xffffff } );
+
+  var mount = base()
+    .union(CSG.cylinder({
+      start: [0,0,BASE_DEPTH],
+      end: [0,0,BASE_DEPTH+MOTOR_DEPTH],
+      radius: MOTOR_OUTER_RADIUS,
+      slices: CYLINDER_QUALITY
+    }))
+    .union(CSG.cube({
+      center: [ARM_LENGTH/2, 0, (BASE_DEPTH+MOTOR_DEPTH)/2],
+      radius: [ARM_LENGTH/2, ARM_HEIGHT/2, (BASE_DEPTH+MOTOR_DEPTH)/2],
+    }))
+    .subtract(CSG.cylinder({
+      start: [0,0,BASE_DEPTH],
+      end: [0,0,BASE_DEPTH + MOTOR_DEPTH + 1],
+      radius: MOTOR_RADIUS,
+      slices: CYLINDER_QUALITY
+    }))
+    .subtract(CSG.cylinder({
+      start: [NECK_X, SCREW_OUTER_Y, NECK_CENTER_Z],
+      end: [NECK_X, MOTOR_OUTER_RADIUS, NECK_CENTER_Z],
+      radius: NECK_RADIUS,
+      slices: CYLINDER_QUALITY
+    }))
+    .subtract(CSG.cube({
+      center: [NECK_X, 0, 0],
+      radius: [NECK_RADIUS, MOTOR_OUTER_RADIUS, NECK_CENTER_Z]
+    }))
+    .subtract(CSG.cylinder({
+      start: [SCREW_OFFSET.x, SCREW_OFFSET.y, -1],
+      end: [SCREW_OFFSET.x, SCREW_OFFSET.y, BASE_DEPTH + 1],
+      radius: BIG_SCREW_RADIUS,
+      slices: CYLINDER_QUALITY/4
+    }))
+    .subtract(CSG.cylinder({
+      start: [0, 0, -1],
+      end: [0, 0, BASE_DEPTH + 1],
+      radius: DRIVE_HOLE_RADIUS,
+      slices: CYLINDER_QUALITY/4
+    }))
+    .subtract(mountScrew(MOUNT_SCREW_NEAR_OFFSET, MOUNT_SCREW_FAR_OFFSET))
+    .subtract(mountScrew(-MOUNT_SCREW_NEAR_OFFSET, -MOUNT_SCREW_FAR_OFFSET))
+    .union(CSG.cube({
+      center: [NECK_X, 0, .5],
+      radius: [NECK_RADIUS+1, ARM_HEIGHT/2, .5]
+    }))
+    .subtract(sideProfile())
+
+  var mesh = new THREE.Mesh(THREE.CSG.fromCSG(mount), material );
+  a3d.cad.addMesh(mesh, 'dc_ht_mount')
+}
+
+function base() {
+  var csg = M.CSGRenderer();
+  var splines = [M.Path([0,0,0]).line([0,0,BASE_DEPTH])];
+  var vertices = M.RibParameterizedPath( M.RibTransform(splines, 2), profile, CYLINDER_QUALITY );
+  M.lift(vertices).generate( M.facers( M.skin, M.closeEdge, M.capTop, M.capBottom ) ).render(csg.renderer);
+  return csg.csgObject();
+
+  function profile(vs) {
+    var v = vs[0];
+    return M.Path([0, MOTOR_OUTER_RADIUS,v.z])
+      .arc([MOTOR_OUTER_RADIUS, MOTOR_OUTER_RADIUS, v.z], [MOTOR_OUTER_RADIUS, 0, v.z], CYLINDER_QUALITY/4)
+      .curve([[MOTOR_OUTER_RADIUS, .6*SCREW_OUTER_Y, v.z],
+              [.5*MOTOR_OUTER_RADIUS, SCREW_OUTER_Y, v.z],
+              [SCREW_OFFSET.x, SCREW_OUTER_Y, v.z]], CYLINDER_QUALITY/4)
+      .curve([[-.3*MOTOR_OUTER_RADIUS, SCREW_OUTER_Y, v.z],
+              [-MOTOR_OUTER_RADIUS, .4*SCREW_OUTER_Y, v.z],
+              [-MOTOR_OUTER_RADIUS, 0, v.z]], CYLINDER_QUALITY/4)
+      .arc([-MOTOR_OUTER_RADIUS, MOTOR_OUTER_RADIUS, v.z],[0,MOTOR_OUTER_RADIUS, v.z], CYLINDER_QUALITY/4)
+  }
+}
+
+
+function sideProfile() {
+  return extrude([0,MOTOR_OUTER_RADIUS+1,0],[0,-MOTOR_OUTER_RADIUS-1,0], profile, CYLINDER_QUALITY);
+  function profile(vs) {
+    var v = vs[0];
+    return M.Path([-MOTOR_OUTER_RADIUS - 1, v.y, BASE_DEPTH])
+      .line([-MOTOR_OUTER_RADIUS - 1, v.y, BASE_DEPTH + MOTOR_DEPTH+1])
+      .line([MOTOR_RADIUS, v.y, BASE_DEPTH + MOTOR_DEPTH+1])
+      .curve([[MOTOR_RADIUS, v.y, BASE_DEPTH],[-MOTOR_OUTER_RADIUS, v.y, BASE_DEPTH]])
+  }
+}
+
+
+function mountScrew(start, end) {
+  return CSG.cylinder({
+      start: [start, 0, -1],
+      end: [start, 0, BASE_DEPTH + 1],
+      radius: NUMBER_FOUR_SCREW_OUTER_RADIUS,
+      slices: CYLINDER_QUALITY/4
+    })
+    .union(CSG.cube({
+      center: [(start+end)/2, 0, BASE_DEPTH/2],
+      radius: [Math.abs(end - start)/2, NUMBER_FOUR_SCREW_OUTER_RADIUS, BASE_DEPTH/2 + 1]
+    }))
+    .union(CSG.cylinder({
+      start: [end, 0, -1],
+      end: [end, 0, BASE_DEPTH + 1],
+      radius: NUMBER_FOUR_SCREW_OUTER_RADIUS,
+      slices: CYLINDER_QUALITY/4
+    }))
+}
+
+function extrude(start, end, pathFunction, pathPoints) {
+  var csg = M.CSGRenderer();
+  var splines = [M.Path(start).line(end)];
+  var vertices = M.RibParameterizedPath( M.RibTransform(splines, 2), pathFunction, pathPoints );
+  M.lift(vertices).generate( M.facers( M.skin, M.closeEdge, M.capTop, M.capBottom ) ).render(csg.renderer);
+  return csg.csgObject();
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+
+    </script>
+
+  </body>
+</html>

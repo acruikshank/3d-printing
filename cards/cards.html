@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Cards</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="../FileSaver.js"></script>
+    <script src="../three.min.js"></script>
+    <script src="../csg.js"></script>
+    <script src="../orbit_controls.js"></script>
+    <script src="../ThreeCSG.js"></script>
+    <script src="../cad.js"></script>
+    <script src="../../manifold/manifold.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+var M = manifold;
+
+var PREPARE_FOR_PRINTING = true;
+
+var CARD_WIDTH = 53;
+var CARD_HEIGHT = 90;
+var STACK_DELTA = 18;
+var geometries = [];
+var phase = Math.PI/2;
+var phaseDelta = Math.PI/64;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+updateGeometries();
+
+function addGeometry() {
+  var cardCount = 120;
+  for (var i=0; i<cardCount; i++) {
+    geometries.push( addCard([0, CARD_WIDTH/2,CARD_HEIGHT],
+      [0, CARD_WIDTH/2,0],
+      [0,-CARD_WIDTH/2,0],
+      [0, -CARD_WIDTH/2,CARD_HEIGHT] ) );
+  }
+}
+
+function updateGeometries() {
+  var stackDelta = STACK_DELTA;
+  var stackStart = stackDelta * geometries.length / 2;
+  geometries.forEach(function(geometry, i){
+    var x = i - geometries.length/2
+    var effect = Math.exp( -(x*x) / (4*geometries.length) );
+    geometry.position = new THREE.Vector3( i*stackDelta - stackStart, 0, 15+ 0*Math.sin(i*1*Math.PI/geometries.length + phase) );
+    geometry.rotation.order = 'ZXY'
+    geometry.rotation.x = effect * Math.PI/3*Math.sin(i*4*Math.PI/geometries.length + phase);
+    geometry.rotation.z = effect * Math.PI/3*Math.sin(i*8*Math.PI/geometries.length + phase);
+  });
+  phase += phaseDelta;
+  a3d.cad.render();
+// requestAnimationFrame(updateGeometries);
+}
+
+function lerp(a, b, x) {
+  return a + x*(b-a);
+}
+
+function addMesh( geometry, colors, name ) {
+  var mesh = new THREE.Mesh(geometry, new THREE.MeshFaceMaterial(colors.map(function(c) {return new THREE.MeshPhongMaterial( { color: c } )})) );
+  a3d.cad.addMesh(mesh, name, true);
+  return mesh;
+}
+
+
+function addCard( p1, p2, p3, p4 ) {
+  var top = M.ThreeJSRenderer();
+  var bottom = M.ThreeJSRenderer();
+
+  var card = M.Path(p1).line(p2).line(p3).line(p4);
+
+  M.lift(card.vertices(4,1)).generate(M.capTop).render(top.renderer);
+  M.lift(card.vertices(4,1)).generate(M.reverse(M.capTop)).render(bottom.renderer);
+
+  top.geometry.faces.forEach(function(f) { f.materialIndex = 0; })
+  bottom.geometry.faces.forEach(function(f) { f.materialIndex = 1; })
+  THREE.GeometryUtils.merge(top.geometry, bottom.geometry)
+
+  top.geometry.computeBoundingSphere();
+  top.geometry.computeFaceNormals();
+
+  return addMesh(top.geometry, ['#ff0000','#ffffff']);
+}
+
+function lerp(a, b, x) {
+  return a + x*(b-a);
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+
+// function addMesh( geometry, color, name ) {
+//   var material = new THREE.MeshPhongMaterial( { color: color } );
+//   var mesh = new THREE.Mesh(geometry, material );
+//   a3d.cad.addMesh(mesh, name, true)
+// }
+
+
+    </script>
+  </body>
+</html>
+

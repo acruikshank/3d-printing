@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Snake</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="../FileSaver.js"></script>
+    <script src="../three.min.js"></script>
+    <script src="../csg.js"></script>
+    <script src="../orbit_controls.js"></script>
+    <script src="../ThreeCSG.js"></script>
+    <script src="../cad.js"></script>
+    <script src="manifold.js"></script>
+    <script src="snake-v2.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+      // SNAKE.render();
+      SNAKE.renderAsync();
+
+      // var lines = ["This\n", "Is\n", "a\n", "test\n"];
+
+      // navigator.webkitPersistentStorage.requestQuota(1024*1024, function() {
+      //   window.webkitRequestFileSystem(window.PERSISTENT , 1024*1024, saveData('snake.stl', lines, done));
+      // });
+
+      // function done() {
+      //   var link = document.createElement('a');
+      //   link.setAttribute('href', 'filesystem:' + location.protocol + location.host + '/persistent/snake.stl');
+      //   link.innerHTML = 'SAVE';
+      //   document.body.appendChild(link);
+      // }
+
+      // function writeLines(lines, next) {
+      //   return function(file) {
+      //     lines.reverse().reduce(function(next, line) {
+      //       return function() {
+      //         file.createWriter(function(writer) {
+      //           writer.onwriteend = next;
+      //           writer.seek(writer.length);
+      //           writer.write(new Blob([line], {type: "text/plain"}));
+      //         });
+      //       }
+      //     }, next)();
+      //   }
+      // }
+
+      // function removeFile(localStorage, name, next) {
+      //   localStorage.root.getFile(name, {create: true}, function(file) { file.remove(next) });
+      // }
+
+      // function saveData(name, lines, next) {
+      //   return function(localStorage) {
+      //     removeFile( localStorage, name, function() {
+      //       localStorage.root.getFile(name, {create: true}, writeLines(lines,next));
+      //     });
+      //   }
+      // }
+
+    </script>
+  </body>
+</html>
+

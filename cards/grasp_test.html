@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Grasp test</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+
+      #canvas {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+        display: none;
+      }
+    </style>
+    <script src="../FileSaver.js"></script>
+    <script src="../three.min.js"></script>
+    <script src="../csg.js"></script>
+    <script src="../orbit_controls.js"></script>
+    <script src="../ThreeCSG.js"></script>
+    <script src="../cad.js"></script>
+    <script src="../../manifold/manifold.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <canvas id="canvas"></canvas>
+    <script>
+
+// Add stem
+// Add socket
+// cut stem from socket
+
+var M = manifold;
+
+var PREPARE_FOR_PRINTING = true;
+var GRASP_HEIGHT = 9;
+var GRASP_BACK = 2;
+var GRASP_WIDTH = 15;
+var GRASP_OFFSET = 2;
+var GRASP_GROOVE = 1.4;
+var GRASP_DEPTH = .8;
+var STEM_SOCKET_WIDTH = 2.5;
+var STEM_SOCKET_HEIGHT = 5;
+var STEM_SOCKET_DEPTH = 5;
+var STEM_SOCKET_TRANSITION = 2;
+var STEM_LENGTH = 30;
+var STEM_HEIGHT = 2;
+var STEM_WIDTH = Math.sqrt(5) * STEM_HEIGHT / 4;
+var SOCKET_RADIUS = 7;
+var SOCKET_HEIGHT = 11;
+var SOCKET_TOLERANCE = .2;
+
+var SOCKET_COUNT = 14;
+var SOCKET_SEPARATION = 13;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  // var grasp = M.CSGRenderer();
+  // var cutout = M.CSGRenderer();
+
+  // var spine = M.Path([1,0,0]).line([1,0,GRASP_DEPTH],1);
+
+  // M.lift(spine.vertices(2,0))
+  //   .generate(
+  //     M.VertexParameterizedPath(outerPath, 4),
+  //     M.facers( M.closeEdge, M.skin, M.capTop, M.capBottom )
+  //   )
+  //   .render(grasp.renderer);
+
+  // M.lift(spine.vertices(2,0))
+  //   .generate(
+  //     M.VertexParameterizedPath(innerPath, 8),
+  //     M.facers( M.closeEdge, M.skin, M.capTop, M.capBottom )
+  //   )
+  //   .render(cutout.renderer);
+
+
+  // var geometry = THREE.CSG.fromCSG(
+  //   grasp.csgObject().subtract(cutout.csgObject()).union(stem())
+  // )
+
+  // geometry.applyMatrix(new THREE.Matrix4().makeTranslation(40,40,0));
+
+  // geometry.computeBoundingSphere();
+  // geometry.computeFaceNormals();
+
+
+  // addMesh(geometry, '#ffffff', "grasp");
+
+  // var stemSpec = [];
+  // for (var i=0; i<SOCKET_COUNT; i++)
+  //   stemSpec.push({
+  //     rotation: new THREE.Matrix4().makeRotationZ(i*.2*Math.PI/SOCKET_COUNT)
+  //               .multiply(new THREE.Matrix4().makeRotationX(0*Math.random()*Math.PI))
+  //               .multiply(new THREE.Matrix4().makeRotationY(0*Math.random()*Math.PI)),
+  //     translation: new THREE.Matrix4().makeTranslation(i*SOCKET_SEPARATION, 0, 0)
+  //   });
+
+  // var socketCSG = stemSpec.reduce(function(csg, spec,i) {
+  //   var sphere = new THREE.IcosahedronGeometry(SOCKET_RADIUS, 1);
+  //   sphere.applyMatrix( spec.translation );
+  //   return csg.union(THREE.CSG.toCSG(sphere));
+  // }, CSG.cube({
+  //   center:[(SOCKET_COUNT-1)*SOCKET_SEPARATION/2, 0, SOCKET_RADIUS*(1+1/6) - SOCKET_HEIGHT],
+  //   radius:[(SOCKET_COUNT-1)*SOCKET_SEPARATION/2, SOCKET_RADIUS/3, SOCKET_RADIUS/3],
+  // }))
+
+  // socketCSG = stemSpec.reduce(function(csg, spec,i) {
+  //   return csg.subtract(stemSocket(spec.rotation, spec.translation));
+  // }, socketCSG)
+  //   .subtract(CSG.cube({
+  //     center:[(SOCKET_COUNT-1)*SOCKET_SEPARATION/2, 0, -SOCKET_RADIUS],
+  //     radius:[(SOCKET_COUNT-1)*SOCKET_SEPARATION, 2*SOCKET_RADIUS, 2*SOCKET_RADIUS - SOCKET_HEIGHT]
+  //   }))
+
+  var slot = THREE.CSG.fromCSG(CSG.cube({
+    center: [0,0,0],
+    radius: [8,.25,5]
+  }));
+
+  rotateGeometry(slot, 0, 0, .13*Math.PI);
+  rotateGeometry(slot, .16*Math.PI, 0, 0);
+  translateGeometry(slot, 0,0, 5);
+
+  var socketCSG = CSG.cube({
+    center: [0,0,0],
+    radius: [5,5,5]
+  }).subtract(THREE.CSG.toCSG(slot));
+
+  addMesh(THREE.CSG.fromCSG(socketCSG), '#ffffff', 'socket');
+}
+
+function stemSocket(rotation, translation) {
+  var socketRenderer = M.ThreeJSRenderer();
+
+  var spine = M.Path([0,0,0]).line([0,STEM_SOCKET_DEPTH*2,0],1)
+
+  M.lift(spine.vertices(4,0))
+    .generate(
+      M.Sequencer([
+        [2, triangleVG(STEM_SOCKET_HEIGHT, STEM_SOCKET_WIDTH)]
+      ]),
+      M.facers( M.closeEdge, M.skin, M.capTop, M.capBottom )
+    )
+    .render(socketRenderer.renderer);
+
+  var socket = socketRenderer.geometry;
+  socket.applyMatrix(new THREE.Matrix4().makeScale(1+SOCKET_TOLERANCE,2+SOCKET_TOLERANCE,1+SOCKET_TOLERANCE));
+  socket.applyMatrix(new THREE.Matrix4().makeTranslation(0,SOCKET_RADIUS - STEM_SOCKET_DEPTH,-2*GRASP_DEPTH));
+  socket.applyMatrix(new THREE.Matrix4().makeRotationY(Math.PI/2));
+  socket.applyMatrix(new THREE.Matrix4().makeRotationX(Math.PI/2));
+
+  socket.applyMatrix(rotation);
+
+  socket.applyMatrix(translation);
+
+  return THREE.CSG.toCSG(socket);
+}
+
+
+function triangleVG(h,w) {
+  return M.vertexGenerator(function(vertex, sink) {
+    sink(new M.Vertex([0,vertex.y,h],vertex.ribStep,0));
+    sink(new M.Vertex([-w,vertex.y,0],vertex.ribStep,.5));
+    sink(new M.Vertex([w,vertex.y,0],vertex.ribStep,1));
+  })
+}
+
+function stem() {
+  var stem = M.CSGRenderer();
+
+  var spine = M.Path([0,0,0])
+      .line([0,STEM_SOCKET_DEPTH,0],1)
+      .line([0,STEM_SOCKET_DEPTH+STEM_SOCKET_TRANSITION,0],1)
+      .line([0,STEM_LENGTH,0],1);
+
+
+  M.lift(spine.vertices(4,0))
+    .generate(
+      M.Sequencer([
+        [2, triangleVG(STEM_SOCKET_HEIGHT, STEM_SOCKET_WIDTH)],
+        [2, triangleVG(STEM_HEIGHT, STEM_WIDTH)]
+      ]),
+      M.facers( M.closeEdge, M.skin, M.capTop, M.capBottom )
+    )
+    .render(stem.renderer);
+  return stem.csgObject();
+}
+
+function isTube(v) {
+  return v.transformStep == 1 || v.transformStep == 0;
+}
+function isTubeFace(face) {
+  return face.reduce(function(m,v) { return m&&isTube(v)}, true);
+}
+
+function outerPath(p) {
+  return M.Path([-GRASP_WIDTH/2,-GRASP_BACK+STEM_LENGTH,p.z])
+    .line([-GRASP_WIDTH/2,GRASP_HEIGHT+STEM_LENGTH,p.z],1)
+    .line([GRASP_WIDTH/2,GRASP_HEIGHT+STEM_LENGTH,p.z],1)
+    .line([GRASP_WIDTH/2,-GRASP_BACK+STEM_LENGTH,p.z],1)
+    .line([-GRASP_WIDTH/2,-GRASP_BACK+STEM_LENGTH,p.z],5)
+}
+
+function innerPath(p) {
+  return M.Path([-GRASP_WIDTH/2 + GRASP_OFFSET, STEM_LENGTH,p.z])
+    .line([-GRASP_WIDTH/2 + GRASP_OFFSET,GRASP_HEIGHT - GRASP_OFFSET+STEM_LENGTH,p.z],1)
+    .line([GRASP_WIDTH/2 - GRASP_OFFSET,GRASP_HEIGHT - GRASP_OFFSET+STEM_LENGTH,p.z],1)
+    .line([GRASP_WIDTH/2 - GRASP_OFFSET,+STEM_LENGTH,p.z],1)
+    .line([GRASP_WIDTH/2 - GRASP_OFFSET - GRASP_GROOVE,+STEM_LENGTH,p.z],1)
+    .line([GRASP_WIDTH/2 - GRASP_OFFSET - GRASP_GROOVE, GRASP_HEIGHT - GRASP_OFFSET - GRASP_GROOVE+STEM_LENGTH,p.z],1)
+    .line([-GRASP_WIDTH/2 + GRASP_OFFSET + GRASP_GROOVE, GRASP_HEIGHT - GRASP_OFFSET - GRASP_GROOVE+STEM_LENGTH,p.z],1)
+    .line([-GRASP_WIDTH/2 + GRASP_OFFSET + GRASP_GROOVE, +STEM_LENGTH, p.z],1)
+}
+
+function randomRed() {
+  return 'rgba('+pastel(55,200)+','+pastel(65,20)+','+pastel(25,0)+',1)';
+}
+
+function randomBlue() {
+  return 'rgba('+pastel(25,0)+','+pastel(65,20)+','+pastel(55,200)+',1)';
+}
+
+function pastel(n,m) {
+  return (Math.random() * n + m)|0;
+}
+
+function addMesh( geometry, color, name ) {
+  var material = new THREE.MeshPhongMaterial( { color: color } );
+  var mesh = new THREE.Mesh(geometry, material );
+  a3d.cad.addMesh(mesh, name, true)
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+
+    </script>
+  </body>
+</html>
+

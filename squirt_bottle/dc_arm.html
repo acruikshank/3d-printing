@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>DC Arm</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="../FileSaver.js"></script>
+    <script src="../three.min.js"></script>
+    <script src="../csg.js"></script>
+    <script src="../orbit_controls.js"></script>
+    <script src="../ThreeCSG.js"></script>
+    <script src="../cad.js"></script>
+    <script src="../sylvester.js"></script>
+    <script src="../../manifold/manifold.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+// All dimensions in millimeters
+var PREPARE_FOR_PRINTING = true;
+var CYLINDER_QUALITY = PREPARE_FOR_PRINTING ? 60 : 40;
+
+var HINGE_DEPTH = 8.2;
+var HINGE_RADIUS = 5;
+var HINGE_FLANGE_RADIUS = 9;
+var HINGE_FLANGE_DEPTH = 2;
+var SCREW_HOLE_RADIUS = .8;
+
+var HINGE_TOLERANCE = 1;
+var ARM_RADIUS = 23;
+var ARM_LENGTH = 82-ARM_RADIUS;
+var ARM_HEIGHT = 10;
+var ARM_DEPTH = 8;
+var CORNER = 3;
+
+var CAM_RADIUS = 11;
+var CAM_OUTER_RADIUS = HINGE_RADIUS + 3;
+var CAM_DEPTH = 10;
+var TIGHT_HOLE_RADIUS = 1.35;
+var CONNECTOR_TOLERANCE = .2;
+var NUMBER_FOUR_SCREW_RADIUS = 1.4;
+
+var M = manifold;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  var material = new THREE.MeshPhongMaterial( { color: 0xffffff } );
+
+  var hinge = hingeCSG();
+  var mesh = new THREE.Mesh(translateGeometry(THREE.CSG.fromCSG(hinge), 0, 50, 0), material );
+  a3d.cad.addMesh(mesh, 'dc_hinge')
+
+  var arm = armCSG();
+  mesh = new THREE.Mesh(THREE.CSG.fromCSG(arm), material );
+  a3d.cad.addMesh(mesh, 'dc_arm')
+
+  var cam = camCSG();
+  mesh = new THREE.Mesh(translateGeometry(THREE.CSG.fromCSG(cam), 0, -50, 0), material );
+  a3d.cad.addMesh(mesh, 'dc_cam')
+
+  if (!PREPARE_FOR_PRINTING) {
+    var tool = CSG.cube({
+      center: [83/2, 20, 1],
+      radius: [83/2, 1, 1]
+    }).union(CSG.cube({
+      center: [83, 20, 23/2],
+      radius: [1, 1, 23/2]
+    }));
+    mesh = new THREE.Mesh(THREE.CSG.fromCSG(tool), material );
+    a3d.cad.addMesh(mesh, 'tool')
+  }
+}
+
+function camCSG() {
+  var axis = M.Path([0,0,0]).line([0,0,CAM_DEPTH]);
+
+  var profile = M.Path([0,-CAM_OUTER_RADIUS,0])
+    .arc([-CAM_OUTER_RADIUS,-CAM_OUTER_RADIUS, 0], [-CAM_OUTER_RADIUS, 0, 0], CYLINDER_QUALITY/4)
+    .arc([-CAM_OUTER_RADIUS,CAM_OUTER_RADIUS, 0], [0, CAM_OUTER_RADIUS, 0], CYLINDER_QUALITY/4)
+    .line([CAM_RADIUS, CAM_OUTER_RADIUS, 0])
+    .arc([CAM_RADIUS + CAM_OUTER_RADIUS,CAM_OUTER_RADIUS, 0], [CAM_RADIUS+CAM_OUTER_RADIUS, 0, 0], CYLINDER_QUALITY/4)
+    .arc([CAM_RADIUS+CAM_OUTER_RADIUS,-CAM_OUTER_RADIUS, 0], [CAM_RADIUS, -CAM_OUTER_RADIUS, 0], CYLINDER_QUALITY/4)
+    .line([0, -CAM_OUTER_RADIUS, 0])
+
+  var csg = M.CSGRenderer();
+  var vertices = M.RibParameterizedPath( M.RibTransform([axis], 2), extrudeAlong(axis, profile), 4+CYLINDER_QUALITY );
+  M.lift(vertices).generate( M.facers( M.skin, M.closeEdge, M.capTop, M.capBottom ) ).render(csg.renderer);
+  var cam =  csg.csgObject()
+    .subtract(CSG.cylinder({
+      start: [0, 0, -1],
+      end: [0, 0, CAM_DEPTH+1],
+      radius: TIGHT_HOLE_RADIUS,
+      slices: CYLINDER_QUALITY/4
+    }))
+    .subtract(CSG.cylinder({
+      start: [CAM_RADIUS, 0, -1],
+      end: [CAM_RADIUS, 0, CAM_DEPTH+1],
+      radius: HINGE_RADIUS + CONNECTOR_TOLERANCE,
+      slices: CYLINDER_QUALITY/2
+    }))
+    .subtract(CSG.cylinder({
+      start: [0, 0, CAM_DEPTH/2],
+      end: [CAM_RADIUS+CAM_OUTER_RADIUS+1, 0, CAM_DEPTH/2],
+      radius: NUMBER_FOUR_SCREW_RADIUS,
+      slices: CYLINDER_QUALITY/4
+    }))
+
+  return cam;
+}
+
+function armCSG() {
+  var theta = .32 * Math.PI;
+  var axis = M.Path([0,0,ARM_DEPTH]).line([ARM_LENGTH,0,ARM_DEPTH])
+    .arc([ARM_LENGTH + ARM_RADIUS,0,ARM_DEPTH],[ARM_LENGTH + ARM_RADIUS,0,ARM_RADIUS+ARM_DEPTH],CYLINDER_QUALITY/4)
+    .arc([ARM_LENGTH + ARM_RADIUS,0,2*ARM_RADIUS+ARM_DEPTH],
+        [ARM_LENGTH + ARM_RADIUS*Math.cos(theta),0,ARM_RADIUS*(1 + Math.sin(theta))+ARM_DEPTH],CYLINDER_QUALITY/4)
+
+  var profile = M.Path([0,-ARM_HEIGHT/2,-ARM_DEPTH])
+    .line([0,-ARM_HEIGHT/2, -CORNER])
+    .arc([0,-ARM_HEIGHT/2, 0], [0,-ARM_HEIGHT/2 + CORNER, 0], CYLINDER_QUALITY/4)
+    .line([0,ARM_HEIGHT/2-CORNER, 0])
+    .arc([0,ARM_HEIGHT/2, 0], [0,ARM_HEIGHT/2, -CORNER], CYLINDER_QUALITY/4)
+    .line([0,ARM_HEIGHT/2, -ARM_DEPTH])
+    .line([0,-ARM_HEIGHT/2, -ARM_DEPTH])
+
+  var csg = M.CSGRenderer();
+  var vertices = M.RibParameterizedPath( M.RibTransform([axis], 3+CYLINDER_QUALITY/2), extrudeAlong(axis, profile), 5+CYLINDER_QUALITY/2 );
+  M.lift(vertices).generate( M.facers( M.skin, M.closeEdge, M.capTop, M.capBottom ) ).render(csg.renderer);
+  var arm = csg.csgObject()
+  if (PREPARE_FOR_PRINTING) {
+    arm = arm.union(CSG.cylinder({
+      start: [0, 0, 0],
+      end: [0, 0, ARM_DEPTH],
+      radius: HINGE_FLANGE_RADIUS,
+      slices: CYLINDER_QUALITY / 2
+    }))
+    .subtract(CSG.cylinder({
+      start: [0, 0, -1],
+      end: [0, 0, HINGE_DEPTH + 1],
+      radius: HINGE_RADIUS + HINGE_TOLERANCE/2,
+      slices: CYLINDER_QUALITY
+    }))
+  }
+  return arm;
+}
+
+function extrudeAlong(extrudePath, profile) {
+  var initialTangent = vertToVec(extrudePath.tangentAt(0)).toUnitVector();
+  var lastRotateAt = null;
+  return function(vs) {
+    var v = vs[0], vec = vertToVec(v);
+    var currentTangent = vertToVec(extrudePath.tangentAt(v.ribStep)).toUnitVector();
+    var cross = initialTangent.cross(currentTangent);
+    var rotation = cross.distanceFrom($V([0,0,0])) *  Math.PI/2;
+    var rotateAt = cross.toUnitVector();
+    if (rotation == 0 && lastRotateAt)
+      rotateAt = lastRotateAt;
+    if (initialTangent.dot(currentTangent) < 0) rotation = Math.PI - rotation;
+    if (rotation > Math.PI - .00000001) rotation = Math.PI - .000000001;
+    lastRotateAt = rotateAt;
+    function t(p) {
+      var pv = $V(p);
+      var rotated = rotation ? pv.rotate(rotation, $L([0,0,0], rotateAt)) : pv;
+      return rotated.add(vec).elements;
+    }
+    return profile.transform(t);
+  }
+}
+
+function hingeCSG() {
+  return CSG.cylinder({
+    start: [0, 0, 0],
+    end: [0, 0, HINGE_DEPTH + HINGE_FLANGE_DEPTH + CAM_DEPTH],
+    radius: HINGE_RADIUS,
+    slices: CYLINDER_QUALITY
+  })
+  .union(CSG.cylinder({
+    start: [0, 0, 0],
+    end: [0, 0, HINGE_FLANGE_DEPTH],
+    radius: HINGE_FLANGE_RADIUS,
+    slices: CYLINDER_QUALITY
+  }))
+  .subtract(CSG.cylinder({
+    start: [0, 0, -1],
+    end: [0, 0, HINGE_DEPTH + HINGE_FLANGE_DEPTH + 1],
+    radius: SCREW_HOLE_RADIUS,
+    slices: CYLINDER_QUALITY
+  }))
+  .subtract(CSG.cylinder({
+    start: [-HINGE_RADIUS-1, 0, HINGE_DEPTH + HINGE_FLANGE_DEPTH + CAM_DEPTH/2],
+    end: [HINGE_RADIUS+1, 0, HINGE_DEPTH + HINGE_FLANGE_DEPTH + CAM_DEPTH/2],
+    radius: NUMBER_FOUR_SCREW_RADIUS,
+    slices: CYLINDER_QUALITY/4
+  }))
+
+}
+
+function screw(z) {
+  return CSG.cylinder({
+    start: [-NECK_WIDTH/2 - FLANGE_WIDTH + 1, 0, z],
+    end: [-NECK_WIDTH/2 - FLANGE_WIDTH - BASE_WIDTH - 1, 0, z ],
+    radius: NUMBER_FOUR_SCREW_RADIUS,
+    slices: CYLINDER_QUALITY/4
+  })
+}
+
+function profile(vs) {
+  var v = vs[0];
+  return M.Path([v.x, 0, FLANGE_DEPTH])
+    .line([v.x, -FLANGE_HEIGHT/2, FLANGE_DEPTH])
+    .line([v.x, -FLANGE_HEIGHT/2 - FLANGE_DEPTH, 2*FLANGE_DEPTH])
+    .line([v.x, 0, 2*FLANGE_DEPTH])
+    .line([v.x, 0, FLANGE_DEPTH])
+}
+
+function extrude(start, end, pathFunction, pathPoints) {
+  var csg = M.CSGRenderer();
+  var splines = [M.Path(start).line(end)];
+  var vertices = M.RibParameterizedPath( M.RibTransform(splines, 2), pathFunction, pathPoints );
+  M.lift(vertices).generate( M.facers( M.skin, M.closeEdge, M.capTop, M.capBottom ) ).render(csg.renderer);
+  return csg.csgObject();
+}
+
+function vertToVec(v) { return $V([v[0],v[1],v[2]]); }
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+  return g;
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+  return g;
+}
+
+    </script>
+
+  </body>
+</html>

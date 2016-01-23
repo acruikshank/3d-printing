@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Gear Set</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="FileSaver.js"></script>
+    <script src="three.min.js"></script>
+    <script src="csg.js"></script>
+    <script src="orbit_controls.js"></script>
+    <script src="ThreeCSG.js"></script>
+    <script src="three_labertoon_c.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+function addGeometry( scene ) {
+  var gearHeight =  3;
+
+  var gear1Props = gearProps(2,20,43);
+  var gear2Props = gearProps(2,20,23);
+
+  var subGear1 = gear(gear2Props, 2*gearHeight, 2);
+  gear1 = gear(gear1Props, gearHeight, 2).union(subGear1)
+    .toMesh(cellMaterial('#0000ff'))
+  gear1.position.x=-(gear1Props.pitchRadius+gear2Props.pitchRadius)/2; 
+  scene.add( gear1 );
+  meshes.gear1 = gear1;
+
+  gear2 = gear(gear2Props, gearHeight, 2)
+    .toMesh(cellMaterial('#ff0000'))
+  gear2.position.x=(gear1Props.pitchRadius+gear2Props.pitchRadius)/2; 
+  gear2.rotation.z=Math.PI;
+  scene.add( gear2 );
+  meshes.gear2 = gear2;
+
+/*
+  var subGear3 = gear(gear2Props, 2*gearHeight, 2);
+  gear3 = gear(gear1Props, gearHeight, 2).union(subGear1)
+    .toMesh(cellMaterial('#66ff66'))
+  gear3.position.x=(gear1Props.pitchRadius+gear2Props.pitchRadius)/2;
+  gear3.position.z=gearHeight;
+  scene.add( gear3 );
+  meshes.gear3 = gear3;
+
+  var gear4 = gear(gear1Props, gearHeight, 2)
+    .toMesh(cellMaterial('#ffff66'))
+  gear4.position.x=-(gear1Props.pitchRadius+gear2Props.pitchRadius)/2; 
+  gear4.position.z=2*gearHeight;
+  scene.add( gear4 );
+  meshes.gear4 = gear4;
+*/
+
+
+  var standMesh = stand(gear1Props.pitchRadius+gear2Props.pitchRadius, 1.9, 15, 15, 2)
+    .toMesh(cellMaterial('#ff8800'));
+  scene.add(standMesh);
+  meshes.stand = standMesh;
+
+  for (var mesh in meshes) addSaveButton(mesh);
+}
+
+function cellMaterial( color ) {
+  return new THREE.MeshLambertMaterial( { color: color } );
+}
+
+function stringifyVector(vec){
+  return ""+vec.x+" "+vec.y+" "+vec.z;
+}
+
+function stringifyVertex(vec){
+  return "vertex "+stringifyVector(vec)+" \n";
+}
+
+function generateSTL(geometry){
+  var vertices = geometry.vertices;
+  var tris     = geometry.faces;
+
+  stl = "solid pixel";
+  for(var i = 0; i<tris.length; i++){
+    stl += ("facet normal "+stringifyVector( tris[i].normal )+" \n");
+    stl += ("outer loop \n");
+    stl += stringifyVertex( vertices[ tris[i].a ] );
+    stl += stringifyVertex( vertices[ tris[i].b ] );
+    stl += stringifyVertex( vertices[ tris[i].c ] );
+    stl += ("endloop \n");
+    stl += ("endfacet \n");
+  }
+  stl += ("endsolid");
+
+  return stl
+}
+
+function saveSTL( geometry, name ){
+    var stlString = generateSTL( geometry );
+  
+  var blob = new Blob([stlString], {type: 'text/plain'});
+  
+  saveAs(blob, name+'.stl');
+}
+
+function addSaveButton( meshName ) {
+  var btn = document.createElement('button');
+  btn.setAttribute('data-mesh', meshName);
+  btn.innerHTML = 'save ' + meshName;
+  document.getElementById('buttons').appendChild(btn);
+  btn.addEventListener('click', function() { saveSTL(meshes[meshName].geometry, meshName); });
+}
+
+var camera, scene, renderer;
+var mesh, geometry;
+var meshes = {};
+var particleLight1, pointLight1;
+var particleLight2, pointLight2;
+
+init();
+animate();
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+function scaleGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeScale(x,y,z);
+  g.applyMatrix(matrix);
+}
+
+function gear( props, thickness, holeDiameter, involutePoints, arcPoints ) {
+  involutePoints = involutePoints || 20;
+  arcPoints = arcPoints || 360;
+
+  var involuteAngle = Math.sqrt(props.outerRadius*props.outerRadius 
+      - props.baseRadius*props.baseRadius) / props.baseRadius;
+  var involuteDiffAngle = involuteAngle - Math.atan(involuteAngle);
+  var addendumArc = props.toothWidth-2*involuteDiffAngle;
+  var addendumPoints = arcPoints*addendumArc/(2*Math.PI);
+  var baseArc = 2*Math.PI/props.numTeeth - props.toothWidth;
+  var basePoints = arcPoints*baseArc/(2*Math.PI);
+
+  var ctx = new THREE.Path()
+  ctx.moveTo(props.baseRadius,0);
+  for (var i=0; i<props.numTeeth; i++) {
+    var baseAngle = i*2*Math.PI/props.numTeeth;
+    for (var j=1; j<=involutePoints; j++)
+      lineToPoint( ctx, involute( props.baseRadius, baseAngle, j*involuteAngle/involutePoints, false  ) );
+    for (var j=1; j<=addendumPoints; j++)
+      lineToPoint( ctx, circlePoint( props.outerRadius, baseAngle+involuteDiffAngle+j*addendumArc/addendumPoints ) );
+    for (var j=1; j<=involutePoints; j++)
+      lineToPoint( ctx, involute( props.baseRadius, baseAngle+props.toothWidth, 
+          (involutePoints-j)*involuteAngle/involutePoints, true ) );
+    for (var j=1; j<=basePoints; j++)
+      lineToPoint( ctx, circlePoint( props.rootRadius, baseAngle+props.toothWidth+j*baseArc/basePoints ) );
+    lineToPoint( ctx, circlePoint( props.rootRadius, baseAngle+props.toothWidth+baseArc ) )
+  }
+
+  var hole = new THREE.CylinderGeometry(holeDiameter, holeDiameter, thickness*1.01, arcPoints );
+  rotateGeometry(hole,Math.PI/2,0,0);
+  translateGeometry(hole,0,0,thickness*.505)
+
+  return new ThreeBSP(ctx.toShapes()[0].extrude({amount:thickness, bevelEnabled:false})).subtract(new ThreeBSP(hole));
+}
+
+function gearProps( circularPitch, pressureAngle, numTeeth ) {
+  var addendum = .8*circularPitch / Math.PI;
+  var dedendum = 1.25 * addendum;
+
+  var pitchRadius = numTeeth * circularPitch / (2 * Math.PI);
+  var baseRadius = pitchRadius * Math.cos(Math.PI*pressureAngle/180);
+  var rootRadius = Math.min(pitchRadius - dedendum, baseRadius);
+  return {
+    circularPitch:circularPitch, 
+    pressureAngle:pressureAngle,
+    numTeeth:numTeeth, 
+    addendum:addendum, 
+    dedendum:dedendum,
+    pitchRadius: pitchRadius,
+    outerRadius: pitchRadius + addendum,
+    baseRadius: baseRadius,
+    rootRadius: rootRadius,
+    toothWidth: 1*(Math.PI / numTeeth + 2*angleToinvoluteIntersection(pitchRadius, baseRadius ))
+  }
+}
+
+function angleToinvoluteIntersection( radius, baseRadius ) {
+  var involuteAngle = Math.sqrt(radius*radius - baseRadius*baseRadius) / baseRadius;
+  return involuteAngle - Math.atan(involuteAngle);
+}
+
+
+function lineToPoint( ctx, point ) {
+  ctx.lineTo( point.x, point.y );
+}
+
+function circlePoint( radius, angle ) {
+  return {x:radius*Math.cos(angle), y:radius*Math.sin(angle)}
+}
+
+function involute( radius, baseAngle, involuteAngle, right ) {
+  var zeroAngle = baseAngle + (right?-1:1) *involuteAngle;
+  return {
+    x: radius*(Math.cos(zeroAngle) + (right?-1:1) * involuteAngle*Math.sin(zeroAngle)),
+    y: radius*(Math.sin(zeroAngle) + (right?1:-1) * involuteAngle*Math.cos(zeroAngle))
+  }
+}
+
+function stand( poleSeparation, poleRadius, poleHeight, baseMargin, baseHeight ) {
+  var base = new THREE.CubeGeometry( 
+    2*baseMargin + poleSeparation + 2*poleRadius,
+    2*baseMargin + 2*poleRadius,
+    baseHeight
+  );
+  var pole1 =  new THREE.CylinderGeometry(poleRadius, poleRadius, poleHeight, 40 );
+  rotateGeometry(pole1,Math.PI/2,0,0);
+  translateGeometry(pole1,-poleSeparation/2,0,poleHeight/2);
+
+  var pole2 =  new THREE.CylinderGeometry(poleRadius, poleRadius, poleHeight, 40 );
+  rotateGeometry(pole2,Math.PI/2,0,0);
+  translateGeometry(pole2,poleSeparation/2,0,poleHeight/2);
+
+  return new ThreeBSP(base).union(new ThreeBSP(pole1)).union(new ThreeBSP(pole2));
+}
+
+
+
+function init() {
+  renderer = new THREE.WebGLRenderer();
+  renderer.setSize( window.innerWidth, window.innerHeight );
+  document.body.appendChild( renderer.domElement );
+
+  camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 1, 500 );
+  camera.position.z = 100;
+
+  controls = new THREE.OrbitControls( camera );
+//  controls.addEventListener( 'change', animate );
+
+  scene = new THREE.Scene();
+
+  addGeometry( scene );
+
+  scene.add( new THREE.AmbientLight( 0x444444 ) );
+
+  var directionalLight = new THREE.DirectionalLight( /*Math.random() * */ 0xffffff, 0.125 );
+
+  directionalLight.position.x = Math.random() - 0.5;
+  directionalLight.position.y = Math.random() - 0.5;
+  directionalLight.position.z = Math.random() - 0.5;
+
+  directionalLight.position.normalize();
+
+  scene.add( directionalLight );
+
+  pointLight1 = new THREE.PointLight( 0xffffff, 1 );
+  pointLight2 = new THREE.PointLight( 0xffffff, 1 );
+  scene.add( pointLight1 );
+  scene.add( pointLight2 );
+
+  renderer.render( scene, camera );
+  
+  window.addEventListener( 'resize', onWindowResize, false );
+}
+
+function onWindowResize() {
+
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+
+  renderer.setSize( window.innerWidth, window.innerHeight );
+
+}
+
+function animate(time) {
+
+  var timer=(time||0)*.0001;
+        requestAnimationFrame( animate );
+
+//        mesh.rotation.x = timer;
+//        mesh.rotation.y = timer;
+
+  pointLight1.position.x = Math.sin( timer * 7 ) * 300;
+  pointLight1.position.y = Math.cos( timer * 5 ) * 400;
+  pointLight1.position.z = Math.cos( timer * 3 ) * 300;
+  pointLight2.position.x = Math.sin( timer * 7 + Math.PI ) * 300;
+  pointLight2.position.y = Math.cos( timer * 5 + Math.PI ) * 400;
+  pointLight2.position.z = Math.cos( timer * 3 + Math.PI ) * 300;
+
+  renderer.render( scene, camera );
+
+}
+
+    </script>
+
+  </body>
+</html>

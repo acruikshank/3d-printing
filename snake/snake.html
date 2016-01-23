@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Snake</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="../FileSaver.js"></script>
+    <script src="../three.min.js"></script>
+    <script src="../csg.js"></script>
+    <script src="../orbit_controls.js"></script>
+    <script src="../ThreeCSG.js"></script>
+    <script src="../cad.js"></script>
+    <script src="../../manifold/manifold.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+/*
+TODO:
+Generate connector and socket curves on each segment.
+Add boolean axel and axel socket.
+Test print.
+Add head.
+Scales?
+*/
+
+var M = manifold;
+
+var PREPARE_FOR_PRINTING = false;
+var CYLINDER_QUALITY = 128;
+
+var LENGTH = 500;
+var RADIUS1 = 10;
+var RADIUS2 = 10.25;
+var RADIUS3 = 10;
+var SIDE_RADIUS1 = 10;
+var SIDE_RADIUS2 = 11;
+var SIDE_RADIUS3 = 10;
+var DEPTH = .8 * RADIUS3;
+var MIDDLE = .4 * LENGTH;
+var TAPER = .85 * LENGTH;
+var CENTER_HEIGHT = 2.5;
+var LENGTH_CTRL_POINTS = [.333,.333,.333,.333,.333,.1];
+
+var RIGHT_BOTTOM_SPLINE = lengthSpline(LENGTH_CTRL_POINTS)([
+  [0,RADIUS1 * Math.acos(DEPTH/RADIUS1),-DEPTH],
+  [MIDDLE,RADIUS2 * Math.acos(DEPTH/RADIUS2),-DEPTH],
+  [TAPER,RADIUS3 * Math.acos(DEPTH/RADIUS3),-DEPTH],
+  [LENGTH, 0, -DEPTH]
+]);
+
+var RIGHT_LOWER_SPLINE = lengthSpline(LENGTH_CTRL_POINTS)([ [0,SIDE_RADIUS1,0], [MIDDLE, SIDE_RADIUS2, 0],
+                                [TAPER, SIDE_RADIUS3, -DEPTH/2], [LENGTH, 0, -DEPTH] ]);
+
+var RIGHT_SPLINE = lengthSpline(LENGTH_CTRL_POINTS)([ [0,SIDE_RADIUS1,CENTER_HEIGHT], [MIDDLE, SIDE_RADIUS2, CENTER_HEIGHT],
+                                [TAPER, SIDE_RADIUS3, 0], [LENGTH, 0, -DEPTH] ]);
+var TOP_SPLINE = lengthSpline(LENGTH_CTRL_POINTS)([ [0,0,RADIUS1], [MIDDLE, 0, RADIUS2], [TAPER, 0, RADIUS3/2], [LENGTH, 0, -DEPTH] ]);
+var BOTTOM_SPLINE = lengthSpline(LENGTH_CTRL_POINTS)([ [0,0,-DEPTH], [MIDDLE, 0, -DEPTH], [TAPER, 0, -DEPTH], [LENGTH, 0, -DEPTH] ]);
+
+var NCENTERS = 23;
+var CENTERS = range(NCENTERS).map(function(x) { return lerp(20, LENGTH-40, x/(NCENTERS-1)); })
+var RADIUS = 14;
+var RADIUS_EPSILON = .3;
+
+var CONNECTOR_DEPTH = 2;
+var CONNECTOR_WIDTH = 3;
+
+var TOP_CONNECTOR_SPLINE = M.Path([-1,0,RADIUS3]).line([RADIUS+2*RADIUS_EPSILON,0,lerp(-DEPTH,RADIUS3,.5)+CONNECTOR_DEPTH])
+var RIGHT_CONNECTOR_SPLINE = M.Path([-1,CONNECTOR_WIDTH,lerp(-DEPTH,RADIUS3,.5)]).line([RADIUS+2*RADIUS_EPSILON,CONNECTOR_WIDTH,lerp(-DEPTH,RADIUS3,.5)])
+var BOTTOM_CONNECTOR_SPLINE = M.Path([-1,0,-DEPTH]).line([RADIUS+2*RADIUS_EPSILON,0,lerp(-DEPTH,RADIUS3,.5)-CONNECTOR_DEPTH])
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  var threeGeometry = M.ThreeJSRenderer();
+  var geometry = threeGeometry.geometry;
+  var renderer = threeGeometry.renderer;
+  var fullOuterSplines = [BOTTOM_SPLINE, RIGHT_BOTTOM_SPLINE.transform(mirrorXZ), RIGHT_LOWER_SPLINE.transform(mirrorXZ),
+                     RIGHT_SPLINE.transform(mirrorXZ), TOP_SPLINE, RIGHT_SPLINE, RIGHT_LOWER_SPLINE, RIGHT_BOTTOM_SPLINE ];
+  var connectorSplines = [BOTTOM_CONNECTOR_SPLINE, RIGHT_CONNECTOR_SPLINE.transform(mirrorXZ), TOP_CONNECTOR_SPLINE, RIGHT_CONNECTOR_SPLINE];
+
+  var mergedGeometry = CENTERS.forEach(function( center, i ) {
+    var startCenter = i ? CENTERS[i-1] : 0;
+    var outerSplines = slicedSplines(fullOuterSplines, startCenter, RADIUS-RADIUS_EPSILON, center, RADIUS + RADIUS_EPSILON);
+
+    var tranformedConnectorSplines = slicedSplines(connectorSplines.map(function(spline) {
+      return spline.transform(translate( center - RADIUS - RADIUS_EPSILON, 0, 0 ))
+    }), center, RADIUS-RADIUS_EPSILON, 0, 0);
+
+    renderSection(outerSplines, tranformedConnectorSplines, renderer);
+  })
+
+  var splines = slicedSplines(fullOuterSplines, CENTERS[CENTERS.length-1], RADIUS-RADIUS_EPSILON, 0, 0);
+  renderSection(splines, null, renderer);
+
+  geometry.computeBoundingSphere();
+  geometry.computeFaceNormals();
+
+  addWireframe(geometry, '#ffffff', 'snake');
+}
+
+function renderSection(splines, connectorSplines, renderer) {
+  if (connectorSplines) {
+    var vertices = M.Stage([
+      [1,M.RibParameterizedPath( M.RibTransform(splines, 10), bodySpline(), 40 )],
+      [1,M.RibParameterizedPath( M.RibTransform(connectorSplines, 10), connectorSpline(), 40 )]
+    ]);
+  } else {
+    var vertices = M.RibParameterizedPath( M.RibTransform(splines, 10), bodySpline(), 40 );
+  }
+
+  M.lift(vertices).generate(
+    M.facers( M.skin )//, M.capTop, M.capBottom )
+  ).render(renderer);
+}
+
+function slicedSplines(splines, startAxis, startRadius, endAxis, endRadius) {
+  if (startAxis)
+    splines = splines.map(function(path) {
+      var cut = path.vertexBordering(xyDist(startAxis,startRadius), .000001, 100);
+      return path.split(cut.transformStep)[1];
+    });
+
+  if (endAxis)
+    splines = splines.map(function(path) {
+      var cut = path.vertexBordering(xyDist(endAxis,endRadius), .000001, 100);
+      return path.split(cut.transformStep)[0];
+    });
+
+  return splines;
+
+  function xyDist(axis,radius) { return function(v) { return Math.pow(axis-v.x,2) + v.y * v.y <= radius*radius } }
+}
+
+function bodySpline() {
+  return function(points) {
+    var p1 = points[3], p2 = points[4];
+
+    if (p1.x == p2.x)
+      return M.Path(points[0])
+        .curve([points[0],points[1],points[1]],5)
+        .curve([points[1],points[2],points[2]],5)
+        .curve([points[2],points[3],points[3]],5)
+        .curve([points[3],points[4],points[4]],5)
+        .curve([points[4],points[5],points[5]],5)
+        .curve([points[5],points[6],points[6]],5)
+        .curve([points[6],points[7],points[7]],5)
+        .curve([points[7],points[0],points[0]],5)
+
+    var cx = .5 * (p2[0]*p2[0] - p1[0]*p1[0] + p2[1]*p2[1] - p1[1]*p1[1]) / (p2[0] - p1[0]);
+
+    return M.Path(points[0])
+      .curve(arcCtrlPoints(cx, points[0],points[1],points[0].z,points[0].z),5)
+      .curve(arcCtrlPoints(cx, points[1],points[2],points[1].z, points[1].z),5)
+      .curve(tweenCtlPoints( points[2], points[3], [.333,.333,.333], [.666,.666,.666]), 1)
+      .curve(arcCtrlPoints(cx, points[3],points[4],points[4].z, points[4].z),5)
+      .curve(arcCtrlPoints(cx, points[4],points[5],points[4].z, points[4].z),5)
+      .curve(tweenCtlPoints( points[5], points[6], [.333,.333,.333], [.666,.666,.666]), 1)
+      .curve(arcCtrlPoints(cx, points[6],points[7],points[7].z, points[7].z),5)
+      .curve(arcCtrlPoints(cx, points[7],points[0],points[0].z,points[0].z),5)
+
+  }
+}
+
+function connectorSpline() {
+  return function(points) {
+    return M.Path(points[0])
+      .curve(tweenCtlPoints( points[0], points[1], [.333,.333,.333], [.666,.666,.666]), 1)
+      .curve(tweenCtlPoints( points[1], points[2], [.333,.333,.333], [.666,.666,.666]), 1)
+      .curve(tweenCtlPoints( points[2], points[3], [.333,.333,.333], [.666,.666,.666]), 1)
+      .curve(tweenCtlPoints( points[3], points[0], [.333,.333,.333], [.666,.666,.666]), 1)
+  }
+}
+
+
+function tweenCtlPoints(p1, p2, s1, s2) {
+  return [
+    range(3).map(function(i) {return lerp(p1[i],p2[i],s1[i]);}),
+    range(3).map(function(i) {return lerp(p1[i],p2[i],s1[i]);}),
+    p2 ];
+}
+
+function arcCtrlPoints( cx, p1, p2, c1z, c2z ) {
+  // (cx-p1x)^2 + p1y^2 = (cx-p2x)^2 + p2y^2
+  // cx * (2*p2x - 2*p1x) = p2x^2 + p2y^2 - p1x^2 - p1y^2
+  console.log()
+
+  var tangent = p1[1] < p2[1] ? [p1[0]+p1[1],p1[1]+cx-p1[0],0] : [p1[0]-p1[1],p1[1]-cx+p1[0],0];
+  var cubic = M.arcToCubic([p1[0],p1[1],0],tangent,[p2[0],p2[1],0]).slice(1);
+
+  cubic[0][2] = c1z;
+  cubic[1][2] = c2z;
+  cubic[2][2] = p2[2];
+  return cubic;
+}
+
+function lengthSpline(ctrWeights) {
+  return function(points) {
+    var path = M.Path(points[0]).curve([
+      forwardCtlPoint(points[0],points[1],LENGTH_CTRL_POINTS[0]),
+      reverseCtlPoint(points[0],points[1],points[2],ctrWeights[1]),
+      points[1]
+    ],5);
+    for (var i=1; i<points.length-1; i++) {
+      path = path.spline([
+        reverseCtlPoint(points[i], points[i+1], points[i+2], ctrWeights[i+1]),
+        points[i+1]
+      ],5)
+    }
+    return path;
+  }
+}
+
+function forwardCtlPoint( p0, p1, fraction ) {
+  return M.vadd( p0, M.vscale(M.vsub(p1,p0), fraction) );
+}
+
+function reverseCtlPoint( p0, p1, p2, fraction ) {
+  var dir = M.vsub(p0,p1);
+  if (p2) dir = M.vscale(M.vadd(dir, M.vsub(p1,p2)), .5);
+  return M.vadd( p1, M.vscale(dir, fraction) );
+}
+
+
+function lerp(a, b, x) {
+  return a + x*(b-a);
+}
+
+function mirrorXZ( point ) { return [point[0], -point[1], point[2]]; }
+function translate(x, y, z) { return function(p) { return [x+p[0],y+p[1],z+p[2]]} }
+function scale(sx, sy, sz) { return function(p) { return [sx*p[0],sy*p[1],sz*p[2]]} }
+
+function range(n) { for (var i=0,a=[];i<n; i++) a.push(i); return a; }
+
+function rotateXY(p, angle) {
+  var sa = Math.sin(angle), ca = Math.cos(angle);
+  return [p[0]*ca + p[1]*sa, p[1]*ca - p[0]*sa, p[2] ];
+}
+
+function addWireframe( geometry, color, name ) {
+  var material = new THREE.MeshBasicMaterial({ wireframe: true, color: color });
+  var mesh = new THREE.Mesh(geometry, material );
+  a3d.cad.addMesh(mesh, name, {clean:true, noShadow:true});
+}
+
+function addMesh( geometry, color, name ) {
+  var material = new THREE.MeshPhongMaterial( { color: color } );
+  var mesh = new THREE.Mesh(geometry, material );
+  a3d.cad.addMesh(mesh, name, true)
+}
+
+
+    </script>
+  </body>
+</html>
+

@@ -1,0 +1,224 @@
+<html>
+  <head>
+    <title>Canvas Test</title>
+    <style>
+      #origin1, #origin2, #amplification1, #intersection, #amplification2 {
+        width: 256px;
+        height: 64px;
+        border: 1px solid #000;
+        display: inline-block;
+        image-rendering: -webkit-crisp-edges;
+      }
+
+      .downsample {
+        display: inline-block;
+        margin-left: 1em;
+      }
+      .downsample canvas {
+        width: 64px;
+        height: 64px;
+        border: 1px solid #000;
+        display: inline-block;
+        image-rendering: -webkit-crisp-edges;        
+      }
+
+      .intersects {
+        padding: 40px;
+        font-size: 40px;
+        text-align: center;
+        color: #fff;
+      }
+
+      .intersects.YES {
+        color: #f66;        
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <canvas id="origin1"></canvas>
+      orgin 1
+    </div>
+    <div>
+      <canvas id="origin2"></canvas>
+      orgin 2
+    </div>
+    <div>
+      <canvas id="amplification1"></canvas>
+      amplification 1
+    </div>
+    <div>
+      <canvas id="intersection"></canvas>
+      intersection
+    </div>
+    <div>
+      <canvas id="amplification2"></canvas>
+      amplification 2
+    </div>
+
+    <div class="intersects">
+      Intersection
+    </div>  
+  <script>
+
+var o1 = origin1.getContext('2d');
+origin1.width = 128;
+origin1.height = 32;
+
+o1.fillColor = '#000';
+o1.textAlign = 'center';
+o1.font = '20px serif';
+
+var o2 = origin2.getContext('2d');
+origin2.width = 128;
+origin2.height = 32;
+
+
+o2.fillColor = '#000';
+o2.textAlign = 'center';
+o2.font = '20px serif';
+
+amplification1.width = 128;
+amplification1.height = 32;
+
+o1.fillText('fixing', 64, 20)
+
+for (var i=0, x = origin1.width, y=origin1.height; x>1 || y>1; x = Math.ceil(x/2), y = Math.ceil(y/2), i++)
+  document.body.appendChild( genDownsample(i,x,y) );
+document.body.appendChild( genDownsample(i,x,y) );
+
+
+origin2.onmousemove = function(e) {
+  var x = e.clientX - origin2.offsetLeft;
+  var y = e.clientY - origin2.offsetTop;
+  var o2 = origin2.getContext('2d');
+  o2.clearRect(0,0,origin2.width,origin2.height);
+  o2.fillText('fish', x/2, y/2 + 6);
+
+  var i = checkIntersection3(origin1, origin2, intersection);
+  document.querySelector('.intersects').setAttribute('class', 'intersects '+ (i ? "YES" : "NO"));
+  //textIntersects();
+}
+
+intersection.width = 128;
+intersection.height = 32;
+
+amplification2.width = 128;
+amplification2.height = 32;
+
+amplify(origin1, amplification1, 8);
+//textIntersects();
+
+function textIntersects() {
+  intersect(origin2, amplification1, intersection)
+  amplify(intersection, amplification2, 2);
+
+  var lastTarget = amplification2;
+  var ds = document.getElementById('ds0');
+  var amp = document.getElementById('amp0');
+  for (var i=1; ds && amp; i++) {
+    downscale(lastTarget,ds);
+    amplify(ds, amp, 2);
+
+    lastTarget = amp;
+    ds = document.getElementById('ds'+i);
+    amp = document.getElementById('amp'+i);
+  }
+
+  var data = lastTarget.getContext('2d').getImageData(0,0,1,1).data;
+  document.querySelector('.intersects').setAttribute('class', 'intersects '+ (data[3] ? "YES" : "NO"));
+}
+
+origin2.onclick = function() {
+  var start = new Date();
+  for (var i=0,o1=origin1,o2=origin2,w=intersection; i<10000; i++)
+    checkIntersection3(o1,o2,w);
+  console.log(new Date().getTime() - start.getTime())
+}
+
+function checkIntersection3(origin1, origin2) {
+  var data1 = origin1.getContext('2d').getImageData(0,0,origin1.width,origin1.height).data
+  var data2 = origin2.getContext('2d').getImageData(0,0,origin1.width,origin1.height).data
+  var intersects = false;
+  for (var i=3,l=data1.length; i<l; i+=4)
+    if (data1[i] && data2[i]) return true;
+  return false;
+}
+
+
+function checkIntersection2(origin1, origin2, work) {
+  var ctx = work.getContext('2d');
+
+  ctx.globalCompositeOperation = 'copy';
+  ctx.drawImage(origin1,0,0);
+  ctx.globalCompositeOperation = 'source-in';
+  ctx.drawImage(origin2,0,0);
+
+  var data = ctx.getImageData(0,0,work.width,work.height).data
+  var intersects = false;
+  for (var i=3,l=data.length; i<l; i+=4)
+    if (data[i]) intersects = true;
+  return intersects;
+}
+
+function checkIntersection(origin1, origin2, work) {
+  var ctx = work.getContext('2d');
+
+  ctx.globalCompositeOperation = 'copy';
+  ctx.drawImage(origin1,0,0);
+  ctx.globalCompositeOperation = 'source-in';
+  ctx.drawImage(origin2,0,0);
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(work,0,0);
+  ctx.drawImage(work,0,0);
+
+  var width = work.width, height = work.height;
+  for (var i=0, x=Math.ceil(width/2), y=Math.ceil(height/2); x>1 || y>1; x = Math.ceil(x/2), y = Math.ceil(y/2), i++) {
+
+    ctx.drawImage(work,0,0,width,height,0,0,x,y);
+    width = x;
+    height = y;
+
+    ctx.drawImage(work,0,0,x,y,0,0,x,y);
+    ctx.drawImage(work,0,0,x,y,0,0,x,y);
+  }
+  ctx.drawImage(work,0,0,width,height,0,0,x,y);
+
+  return ctx.getImageData(0,0,1,1).data[3];
+}
+
+function genDownsample(id, x, y) {
+  var downsample = document.createElement('div');
+  downsample.setAttribute('class','downsample');
+  downsample.innerHTML = ' '+x+','+y+' <canvas id="ds'+id+'" width="'
+          +x+'" height="'+y+'"></canvas><canvas id="amp'+id+'" width="'+x+'" height="'+y+'"></canvas>';
+  return downsample;
+}
+
+function intersect( origin1, origin2, dest ) {
+  var intersect = dest.getContext('2d');
+  intersect.globalCompositeOperation = 'copy';
+  intersect.drawImage(origin1,0,0);
+  intersect.globalCompositeOperation = 'source-in';
+  intersect.drawImage(origin2,0,0);
+}
+
+function amplify( origin, dest, times ) {
+  var amp = dest.getContext('2d');
+  amp.globalCompositeOperation = 'copy';
+  amp.drawImage(origin,0,0);
+  amp.globalCompositeOperation = 'source-over';
+  for (var i=0; i<times; i++)
+    amp.drawImage(dest,0,0);
+}
+
+function downscale(origin, dest) {
+  var ctx = dest.getContext('2d');
+  ctx.globalCompositeOperation = 'copy';
+  ctx.drawImage(origin,0,0,dest.width,dest.height);
+}
+
+    </script>
+  </body>
+</html>

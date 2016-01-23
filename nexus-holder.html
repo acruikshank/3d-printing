@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>nexus holder</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="FileSaver.js"></script>
+    <script src="three.min.js"></script>
+    <script src="csg.js"></script>
+    <script src="orbit_controls.js"></script>
+    <script src="ThreeCSG.js"></script>
+    <script src="cad.js"></script>
+    <script src="../manifold/manifold.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+// All dimensions in millimeters
+var PREPARE_FOR_PRINTING = false;
+var RADIUS = {x:5.5,y:98.5,z:20};
+var LIP = {y:6};
+var EDGE = {x:1.5,y:1.5}
+var INNER_CONTROL = {x:4,y:8};
+var CURVE = {y:14};
+var THICKNESS = 3.5;
+var WIRE_RADIUS = 1;
+var BOLT_RADIUS = 4.3;
+var CONNECTOR_RADIUS=5.3;
+var CONNECTOR_LENGTH = 30;
+var CYLINDER_QUALITY = PREPARE_FOR_PRINTING ? 60 : 40;
+var BRACE_WIDTH = 6;
+var UPPER_CUTTOUT_DEPTH = 1;
+var NUMBER_FOUR_SCREW_RADIUS = 1.4;
+
+var M = manifold;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  var material = new THREE.MeshPhongMaterial( { color: 0xffffff } );
+  var baseCSG = holder();
+
+  if ( PREPARE_FOR_PRINTING ) {
+    right = THREE.CSG.fromCSG(baseCSG.subtract(CSG.cube({
+      center: [0,0,RADIUS.z],
+      radius: [4*RADIUS.x, 4*RADIUS.y, RADIUS.z]
+    })));
+    rotateGeometry(right,0,0,Math.PI/4);
+
+    left = THREE.CSG.fromCSG(baseCSG.subtract(CSG.cube({
+      center: [0,0,-RADIUS.z],
+      radius: [4*RADIUS.x, 4*RADIUS.y, RADIUS.z]
+    })));
+    rotateGeometry(left,0,Math.PI,0);
+    rotateGeometry(left,0,0,Math.PI/4);
+    translateGeometry(left,15,15,0);
+
+    var mesh = new THREE.Mesh(left, material );
+    a3d.cad.addMesh(mesh, 'left holder')
+    
+    mesh = new THREE.Mesh(right, material );
+    a3d.cad.addMesh(mesh, 'right holder')
+  } else {
+    var mesh = new THREE.Mesh(THREE.CSG.fromCSG(baseCSG), material );
+    a3d.cad.addMesh(mesh, 'holder')    
+  }
+}
+
+function holder() {
+  return baseGeometryCSG()
+    .subtract( backCutoutCSG() )
+    .subtract( topCutoutCSG() )
+    .union(housing())
+    .subtract(CSG.cylinder({
+      start:[-RADIUS.x-CONNECTOR_RADIUS, RADIUS.y + THICKNESS,0],
+      end:[-RADIUS.x-CONNECTOR_RADIUS, RADIUS.y - CONNECTOR_LENGTH,0],
+      radius: WIRE_RADIUS,
+      slices: (CYLINDER_QUALITY/4)|0
+    }))
+    .subtract(CSG.cylinder({
+      start:[-RADIUS.x-CONNECTOR_RADIUS, RADIUS.y - 2*THICKNESS,0],
+      end:[-RADIUS.x-CONNECTOR_RADIUS, RADIUS.y - CONNECTOR_LENGTH,0],
+      radius: BOLT_RADIUS,
+      slices: CYLINDER_QUALITY
+    }))
+    .subtract(CSG.cylinder({
+      start:[-RADIUS.x-THICKNESS/4,RADIUS.y-THICKNESS/2,RADIUS.z*2],
+      end:[-RADIUS.x-THICKNESS/4,RADIUS.y-THICKNESS/2,-RADIUS.z*2],
+      radius: NUMBER_FOUR_SCREW_RADIUS,
+      slices: (CYLINDER_QUALITY/2)|0
+    }))
+}
+
+function housing() {
+  var renderContext = M.CSGRenderer();
+
+  var xMax = -RADIUS.x-THICKNESS;
+  var xMid = -RADIUS.x-CONNECTOR_RADIUS*(1+1/Math.sqrt(2));
+  var xMin = -RADIUS.x-2*CONNECTOR_RADIUS;
+  var zMid = CONNECTOR_RADIUS/Math.sqrt(2);
+  var ctl1 = .4;
+  var ctl2 = .5;
+  var ctl3 = .1;
+
+  M.step(2) 
+    ( M.vertexGenerator( function(step, vertexSink) {
+        var y = RADIUS.y - CONNECTOR_LENGTH + step * CONNECTOR_LENGTH;
+        M.Path([-RADIUS.x-THICKNESS,y,RADIUS.z])
+        .curve([
+          [xMax,y,CONNECTOR_RADIUS+.25*(RADIUS.z-CONNECTOR_RADIUS)],
+          [xMid+ctl1,y,zMid+ctl1],
+          [xMid,y,zMid]], 8)
+        .curve([
+          [xMid-ctl2*zMid,y,(1-ctl2)*zMid],
+          [xMin,y,ctl3],
+          [xMin,y,0]], 8)
+        .curve([
+          [xMin,y,-ctl3],
+          [xMid-ctl2*zMid,y,-(1-ctl2)*zMid],
+          [xMid,y,-zMid]], 8)
+        .curve([
+          [xMid+ctl1,y,-zMid-ctl1],
+          [xMax,y,-CONNECTOR_RADIUS-.25*(RADIUS.z-CONNECTOR_RADIUS)],
+          [-RADIUS.x-THICKNESS,y,-RADIUS.z]], 8)
+
+        .vertices(CYLINDER_QUALITY, step)(vertexSink)
+      } )
+    ( M.facers( M.skin, M.closeEdge, M.capBottom, M.capTop )
+    ( renderContext.renderer
+  )));
+
+  return renderContext.csgObject();  
+}
+
+function backCutoutCSG() {
+  var renderContext = M.CSGRenderer();
+
+  M.step(2) 
+    ( M.vertexGenerator( function(step, vertexSink) {
+        var y = step*2*RADIUS.y;
+        M.Path([2*RADIUS.x,y,RADIUS.z-BRACE_WIDTH])
+        .line( [-RADIUS.x+UPPER_CUTTOUT_DEPTH+THICKNESS,y,RADIUS.z-BRACE_WIDTH])
+        .curve([[-RADIUS.x+UPPER_CUTTOUT_DEPTH,y,RADIUS.z-BRACE_WIDTH],
+              [-RADIUS.x+UPPER_CUTTOUT_DEPTH,y,RADIUS.z-THICKNESS-BRACE_WIDTH]], 8 )
+        .line([-RADIUS.x+UPPER_CUTTOUT_DEPTH,y,-RADIUS.z+THICKNESS+BRACE_WIDTH])
+        .curve([[-RADIUS.x+UPPER_CUTTOUT_DEPTH,y,-RADIUS.z+BRACE_WIDTH],
+            [-RADIUS.x+UPPER_CUTTOUT_DEPTH+THICKNESS,y,-RADIUS.z+BRACE_WIDTH]], 8)
+        .line( [2*RADIUS.x,y,-RADIUS.z+BRACE_WIDTH])
+
+        .vertices(2*CYLINDER_QUALITY, step)(vertexSink)
+      } )
+    ( M.facers( M.skin, M.closeEdge, M.capBottom, M.capTop )
+    ( renderContext.renderer
+  )));
+
+  return renderContext.csgObject();  
+}
+
+function topCutoutCSG() {
+  var renderContext = M.CSGRenderer();
+
+  M.step(2) 
+    ( M.vertexGenerator( function(step, vertexSink) {
+        var x = -2*RADIUS.x + step*4*RADIUS.z;
+        M.Path([x,-2*RADIUS.y,RADIUS.z-BRACE_WIDTH])
+        .line( [x,RADIUS.y-CONNECTOR_LENGTH-THICKNESS,RADIUS.z-BRACE_WIDTH])
+        .curve([[x,RADIUS.y-CONNECTOR_LENGTH,RADIUS.z-BRACE_WIDTH],
+            [x,RADIUS.y-CONNECTOR_LENGTH,RADIUS.z-THICKNESS-BRACE_WIDTH]], 8 )
+        .line([x,RADIUS.y-CONNECTOR_LENGTH,-RADIUS.z+THICKNESS+BRACE_WIDTH])
+        .curve([[x,RADIUS.y-CONNECTOR_LENGTH,-RADIUS.z+BRACE_WIDTH],
+            [x,RADIUS.y-CONNECTOR_LENGTH-THICKNESS,-RADIUS.z+BRACE_WIDTH]], 8)
+        .line( [x,-2*RADIUS.y,-RADIUS.z+BRACE_WIDTH])
+
+        .vertices(2*CYLINDER_QUALITY, step)(vertexSink)
+      } )
+    ( M.facers( M.skin, M.closeEdge, M.capBottom, M.capTop )
+    ( renderContext.renderer
+  )));
+
+  return renderContext.csgObject();  
+}
+
+function baseGeometryCSG() {
+  var renderContext = M.CSGRenderer();
+
+  M.step(2) 
+    ( M.vertexGenerator( function(step, vertexSink) {
+        var z = -RADIUS.z + step*2*RADIUS.z;
+        M.Path([RADIUS.x,RADIUS.y - LIP.y,z])
+        .line( [RADIUS.x,RADIUS.y-EDGE.y,z])
+        .line( [RADIUS.x-EDGE.x,RADIUS.y,z])
+        .curve([[ RADIUS.x-EDGE.x-INNER_CONTROL.x,RADIUS.y,z],
+                [-RADIUS.x,RADIUS.y-CURVE.y + INNER_CONTROL.y,z],
+                [-RADIUS.x,RADIUS.y-CURVE.y,z]], 10)
+        .line( [-RADIUS.x,-RADIUS.y + CURVE.y,z])
+        .curve([[-RADIUS.x,-RADIUS.y+CURVE.y-INNER_CONTROL.y,z],
+                [RADIUS.x-EDGE.x-INNER_CONTROL.x,-RADIUS.y,z],
+                [RADIUS.x-EDGE.x,-RADIUS.y,z]], 10)
+        .line( [RADIUS.x,-RADIUS.y+EDGE.y,z])
+        .line( [RADIUS.x,-RADIUS.y+LIP.y,z])
+        .line( [RADIUS.x+THICKNESS,-RADIUS.y+LIP.y,z])
+        .line( [RADIUS.x+THICKNESS,-RADIUS.y,z])
+        .curve( [[RADIUS.x+THICKNESS,-RADIUS.y-THICKNESS,z],[RADIUS.x,-RADIUS.y-THICKNESS,z]], 8)
+        .curve([[-RADIUS.x-THICKNESS,-RADIUS.y-THICKNESS,z], 
+                [-RADIUS.x-THICKNESS,-RADIUS.y+2*RADIUS.x+THICKNESS,z]], 10 )
+        .line( [-RADIUS.x-THICKNESS,RADIUS.y,z])
+        .curve( [[-RADIUS.x-THICKNESS,RADIUS.y+THICKNESS,z],
+                [-RADIUS.x,RADIUS.y+THICKNESS,z]],8)
+        .line( [RADIUS.x,RADIUS.y+THICKNESS,z])
+        .curve( [[RADIUS.x+THICKNESS,RADIUS.y+THICKNESS,z],[RADIUS.x+THICKNESS,RADIUS.y,z]],8)
+        .line( [RADIUS.x+THICKNESS,RADIUS.y-LIP.y,z])
+        .vertices(2*CYLINDER_QUALITY, step)(vertexSink)
+      } )
+    ( M.facers( M.skin, M.closeEdge, M.capBottom, M.capTop )
+    ( renderContext.renderer
+  )));
+
+  return renderContext.csgObject();
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+
+    </script>
+
+  </body>
+</html>

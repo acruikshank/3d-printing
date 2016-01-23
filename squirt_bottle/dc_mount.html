@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>squirt automator - dc mount</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="../FileSaver.js"></script>
+    <script src="../three.min.js"></script>
+    <script src="../csg.js"></script>
+    <script src="../orbit_controls.js"></script>
+    <script src="../ThreeCSG.js"></script>
+    <script src="../cad.js"></script>
+    <script src="../../manifold/manifold.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+// All dimensions in millimeters
+var PREPARE_FOR_PRINTING = true;
+var CYLINDER_QUALITY = PREPARE_FOR_PRINTING ? 60 : 40;
+
+var BASE_DEPTH = 10;
+var SCREW_Z = 62;
+var SCREW_Y = -25;
+var MOTOR_CENTER = 40;
+
+var MOUNT_HEIGHT = 23;
+var MOTOR_RADIUS = 14.2;
+var MOTOR_OUTER_RADIUS = 17;
+var LOCK_WIDTH = 2.5;
+var LOCK_DEPTH = 2.5;
+var LOCK_HEIGHT = 2.5;
+
+var VENT_DEPTH = 7;
+var VENT_WIDTH = 14;
+
+var MOTOR_DEPTH = 38.5;
+var MOTOR_HOLDER_DEPTH = 32;
+
+var NECK_RADIUS = 12;
+var NECK_X = -30;
+var NECK_BRACE_WIDTH = -NECK_X + NECK_RADIUS + 8;
+var NECK_BRACE_HEIGHT = 10;
+
+var FLANGE_STOP = 21.8;
+var FLANGE_HEIGHT = 30;
+var FLANGE_WIDTH = 20;
+var FLANGE_CUT = 10;
+
+var NUMBER_FOUR_SCREW_RADIUS = 1.4;
+
+
+var M = manifold;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  var material = new THREE.MeshPhongMaterial( { color: 0xffffff } );
+
+  var maxHeight = MOTOR_HOLDER_DEPTH;
+  var mount = CSG.cylinder({
+      start: [0,0,0],
+      end: [0,0,maxHeight],
+      radius: MOTOR_OUTER_RADIUS,
+      slices: CYLINDER_QUALITY
+    })
+    .union(CSG.cube({
+      center: [-NECK_BRACE_WIDTH/2, 0, maxHeight/2],
+      radius: [NECK_BRACE_WIDTH/2, NECK_BRACE_HEIGHT/2, maxHeight/2]
+    }))
+    .subtract(CSG.cylinder({
+      start: [NECK_X, -MOTOR_OUTER_RADIUS, MOTOR_DEPTH-NECK_RADIUS],
+      end: [NECK_X, MOTOR_OUTER_RADIUS, MOTOR_DEPTH-NECK_RADIUS],
+      radius: NECK_RADIUS,
+      slices: CYLINDER_QUALITY
+    }))
+    .subtract(CSG.cube({
+      center:[NECK_X, 0, MOTOR_DEPTH],
+      radius:[NECK_RADIUS, MOTOR_OUTER_RADIUS, NECK_RADIUS]
+    }))
+    .union(CSG.cube({
+      center: [0, -FLANGE_HEIGHT/2, FLANGE_STOP/2],
+      radius: [FLANGE_WIDTH/2, FLANGE_HEIGHT/2, FLANGE_STOP/2]
+    }))
+    .subtract(CSG.cube({
+      center: [0, -FLANGE_HEIGHT, MOTOR_DEPTH],
+      radius: [FLANGE_WIDTH/2, FLANGE_CUT, MOTOR_DEPTH - FLANGE_STOP]
+    }))
+    .subtract(motorFittingInverted())
+    .subtract(vent())
+
+  var mesh = new THREE.Mesh(THREE.CSG.fromCSG(mount), material );
+  a3d.cad.addMesh(mesh, 'dc_mount')
+}
+
+function motorFittingInverted() {
+  return CSG.cylinder({
+    start: [0, 0, -1],
+    end: [0, 0, MOTOR_DEPTH + 1],
+    radius: MOTOR_RADIUS,
+    slices: CYLINDER_QUALITY
+  })
+  .subtract(CSG.cube({
+    center:[MOTOR_RADIUS - (LOCK_DEPTH - LOCK_WIDTH/2)/2, 0, LOCK_HEIGHT/2],
+    radius:[(LOCK_DEPTH - LOCK_WIDTH/2)/2, LOCK_WIDTH/2, LOCK_HEIGHT/2]
+  })).subtract(CSG.cylinder({
+    start:[MOTOR_RADIUS - LOCK_DEPTH + LOCK_WIDTH/2, 0, 0],
+    end:[MOTOR_RADIUS - LOCK_DEPTH + LOCK_WIDTH/2, 0, LOCK_HEIGHT],
+    radius: LOCK_WIDTH/2,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cube({
+    center:[-MOTOR_RADIUS + (LOCK_DEPTH - LOCK_WIDTH/2)/2, 0, LOCK_HEIGHT/2],
+    radius:[(LOCK_DEPTH - LOCK_WIDTH/2)/2, LOCK_WIDTH/2, LOCK_HEIGHT/2]
+  })).subtract(CSG.cylinder({
+    start:[-MOTOR_RADIUS + LOCK_DEPTH - LOCK_WIDTH/2, 0, 0],
+    end:[-MOTOR_RADIUS + LOCK_DEPTH - LOCK_WIDTH/2, 0, LOCK_HEIGHT],
+    radius: LOCK_WIDTH/2,
+    slices: CYLINDER_QUALITY
+  }))
+}
+
+function vent() {
+  var csg = M.CSGRenderer();
+  var splines = [M.Path([0,0,0]).line([0,MOTOR_OUTER_RADIUS,0])];
+  var vertices = M.RibParameterizedPath( M.RibTransform(splines, 5+ CYLINDER_QUALITY/4), profile, CYLINDER_QUALITY );
+  M.lift(vertices).generate( M.facers( M.skin, M.closeEdge, M.capTop, M.capBottom ) ).render(csg.renderer);
+  return csg.csgObject();
+
+  function profile(vs) {
+    var v = vs[0];
+    return M.Path([-VENT_WIDTH,v.y,VENT_DEPTH])
+      .line([VENT_WIDTH,v.y,VENT_DEPTH])
+      .line([0,v.y,VENT_DEPTH+VENT_WIDTH])
+  }
+}
+
+
+function screw(y) {
+  return CSG.cylinder({
+    start: [SERVO_X + 1, y, BASE_DEPTH + SERVO_FLANGE_DEPTH/2 ],
+    end: [SERVO_X - SCREW_LENGTH, y, BASE_DEPTH + SERVO_FLANGE_DEPTH/2 ],
+    radius: NUMBER_FOUR_SCREW_RADIUS,
+    slices: CYLINDER_QUALITY/4
+  })
+}
+
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+
+    </script>
+
+  </body>
+</html>

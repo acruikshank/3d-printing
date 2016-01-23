@@ -1,0 +1,262 @@
+<html><head>
+<style>
+  canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+  body {
+    height: 100%;
+    margin: 0;
+    background-color: #000;
+  }
+</style>
+</head><body><canvas id="c"></canvas></body>
+<script>
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+var cw = canvas.width = canvas.offsetWidth*(window.devicePixelRatio||1);
+var ch = canvas.height = canvas.offsetHeight*(window.devicePixelRatio||1);
+
+
+ctx.fillStyle = '#000';
+ctx.fillRect( 0,0,cw, ch);
+
+var N = 44;
+var R = 3*Math.min(cw,ch)/8;
+
+ctx.translate(cw/2,ch/2);
+
+function intersect(v1, v2, v3, v4) {
+  var det = (v1.x-v2.x)*(v3.y-v4.y) - (v1.y-v2.y)*(v3.x-v4.x);
+  return !det ? null : {
+    x: ((v1.x*v2.y-v2.x*v1.y)*(v3.x-v4.x) - (v3.x*v4.y-v4.x*v3.y)*(v1.x-v2.x))/det,
+    y: ((v1.x*v2.y-v2.x*v1.y)*(v3.y-v4.y) - (v3.x*v4.y-v4.x*v3.y)*(v1.y-v2.y))/det
+  };
+}
+
+function doesIntersect(v1, v2, v3, v4) {
+  var p = intersect(v1,v2,v3,v4);
+  if (!p) return false;
+  return p.x >= Math.min(v1.x,v2.x) && p.x >= Math.min(v3.x,v4.x)
+    && p.x <= Math.max(v1.x,v2.x) && p.x <= Math.max(v3.x,v4.x)
+    && p.y >= Math.min(v1.y,v2.y) && p.y >= Math.min(v3.y,v4.y)
+    && p.y <= Math.max(v1.y,v2.y) && p.y <= Math.max(v3.y,v4.y);
+}
+
+function vertex(i) {
+  var theta = 2*Math.PI*i/N;
+  var s = 1; //.5*(1 + Math.cos(theta));
+  return {
+    x:s*R*Math.cos(theta), 
+    y:s*R*Math.sin(theta)
+  };
+}
+
+
+function perturb(vertices) {
+  // pick random vertex
+  // randomly choose a point near it.
+  // if the point lies outside the radius do nothing
+  // test if the segments formed from the new point and the points neighbors
+  //   do not intersect any of shapes other lines. If so, do nothing.
+  // replace the point with the new point.
+  
+  var O=20, len = vertices.length, index = (Math.random() * len)|0,
+      p = { x: vertices[index].x + O*(2*Math.random()-1), 
+           y:vertices[index].y + O*(2*Math.random()-1) }
+  if (p.x*p.x + p.y*p.y > R*R) return;
+  
+  var l = vertices[ (index + len - 1)%len ], r = vertices[ (index + 1)%len ];
+  for (var i=0; i< len-2; i++) {
+    var r1 = vertices[(index+i+1)%len], r2 =vertices[(index+i+2)%len],
+        l1 = vertices[(index+len-i-1)%len], l2=vertices[(index+len-i-2)%len]
+    if (doesIntersect(p,l,r1,r2) || doesIntersect(p,r,l1,l2)) return;
+  }
+  
+  vertices[index] = p;
+}
+
+var vertices = [];
+
+
+function isSelfIntersecting( p1, p2, vertices ) {
+  for (var i=0,v1,v2; v1=vertices[i], v2=vertices[i+1]; i++)
+    if ( doesIntersect(p1,p2,v1,v2) ) return true;
+  return false;
+}
+
+function tesselate(vertices) {
+  if ( vertices.length < 3 ) return;
+  if ( vertices.length < 4 ) return tesselateConvex(vertices);
+  
+  // This doesn't work. It allows vertices from one point in the polygon to intrude
+  // into another (among other possible problems).
+  // Test each concave point in the remainder for intersection with a cut.
+  // 
+  
+  // traveling in either direction, find the first negative vertex followed by a positive one.
+  // If there are no negative vertices, the shape is convex. Tesselate and return.
+  // Starting with the vertex after that, find the first negative vertex or the last vertext s.t.
+  //   the angle formed from it and the first two vertices is < π.
+  // Create two new sets of vertices, one containing all the vertices found above, and the
+  //   other containing the rest plus the first and last from above.
+  // The first set is convex, so pass it on to be tesselated.
+  // The second list is less concave, because the points at the ends now have less negative angles.
+  // Recurse with the second list. 
+  function index(i) { return (i+vertices.length)%vertices.length;  }
+  function center(i) { return vertices[ i%vertices.length ] }
+  function left(i) { return vertices[ (i+vertices.length-1)%vertices.length ] }
+  function right(i) { return vertices[ (i+1)%vertices.length ] }
+  function angle(l,p,r) { return Math.atan2( 
+    (r.x-p.x)*(l.y-p.y) - (r.y-p.y)*(l.x-p.x),
+    (r.x-p.x)*(l.x-p.x) + (r.y-p.y)*(l.y-p.y)
+  ) }
+
+  var angles = vertices.map( function(p,i) { return angle(left(i),p,right(i)); })
+  
+  var startPoint;
+  for (var i=vertices.length-1; i>=0; i--) {
+    if ( angles[i] <= 0 && angles[index(i+1)] > 0 ) {
+      startPoint = i;
+
+      for (var j=2, endPoint; j<vertices.length-1; j++) {
+      endPoint = j + startPoint;
+        if ( angle(left(endPoint),center(endPoint),right(endPoint)) <= 0 )
+          break;
+
+        if ( angle(center(endPoint),center(startPoint), right(startPoint)) <= 0 ) {
+          endPoint = (endPoint+vertices.length-1) % vertices.length;
+          break;
+        }
+      }
+      
+      endPoint = index(endPoint);
+
+      var newShape, rest;
+      if (endPoint < startPoint) {
+        newShape = vertices.slice(startPoint).concat(vertices.slice(0,endPoint+1));
+        rest = vertices.slice(endPoint, startPoint+1);
+      } else {
+        newShape = vertices.slice(startPoint, endPoint+1);
+        rest = vertices.slice(endPoint).concat(vertices.slice(0,startPoint+1));
+      }
+
+      if ( ! isSelfIntersecting( vertices[startPoint], vertices[endPoint], rest.slice(1,rest.length-1) ) ) {
+        if ( Math.abs(endPoint- startPoint) <= 1 || Math.abs(endPoint- startPoint) >= vertices.length -1 ) {
+          console.log("wrap around", startPoint, endPoint, vertices.length);
+          return;
+        }
+        if (endPoint < startPoint) {
+          tesselate( vertices.slice(startPoint).concat(vertices.slice(0,endPoint+1)) );
+          tesselate( vertices.slice(endPoint, startPoint+1 ) );
+        } else {
+          tesselate( vertices.slice(startPoint, endPoint+1 ) );
+          tesselate( vertices.slice(endPoint).concat(vertices.slice(0,startPoint+1)) );
+        }
+
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        var p = center(startPoint);
+        ctx.beginPath()
+        ctx.moveTo( p.x, p.y );
+        p = center(endPoint);
+        ctx.lineTo( p.x, p.y );
+        ctx.stroke();  
+        return;
+      }
+    }
+  }
+  
+  return tesselateConvex(vertices);
+  
+}
+
+function tesselateConvex(vertices) {
+  var ai = 0, bi=(vertices.length/3)|0, ci=(2*vertices.length/3)|0;
+  var a = vertices[ai], b=vertices[bi], c=vertices[ci];
+
+  ctx.fillStyle = randomColor();
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(a.x,a.y);
+  ctx.lineTo(b.x,b.y);
+  ctx.lineTo(c.x,c.y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  
+  if (bi-ai > 1) tesselateConvex(vertices.slice(ai,bi+1));
+  if (ci-bi > 1) tesselateConvex(vertices.slice(bi,ci+1));
+  if (vertices.length-ci > 1) 
+    tesselateConvex(vertices.slice(ci,vertices.length).concat([a]));
+}
+
+
+function test() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect( -cw/2, -ch/2, cw, ch );
+  vertices = [];
+  
+  for (var i=0; i<N; i++) vertices.push(vertex(i));
+  for (var i=0; i<100*N; i++) perturb(vertices);
+
+/*
+  var vertices = [
+    {x:-600, y:500},
+    {x:-600, y:-500},
+//    {x:-200, y:-500},
+//    {x:400, y:300},
+//    {x:400, y:-500},
+//    {x:500, y:-490},
+//    {x:600, y:-500},
+//    {x:600, y:500},
+//    {x:200, y:500},
+    {x:-400, y:-300},
+    {x:-400, y:500},
+    {x:-500, y:400},
+  ];
+
+  var cut = (Math.random() * vertices.length) | 0;
+  vertices = vertices.slice(cut).concat(vertices.slice(0,cut));
+  console.log(cut)
+  */
+  
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = .25;
+  tesselate(vertices);
+    
+  ctx.strokeStyle = '#6cf';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(vertices[0].x, vertices[0].y);
+  for (var i=1, v; v = vertices[i]; i++) ctx.lineTo(v.x,v.y);
+  ctx.lineTo(vertices[0].x, vertices[0].y);
+  ctx.stroke();
+}
+
+document.body.onkeyup = function(e) {
+  if (e.keyCode == 32) {
+    if ( testInterval != null ) {
+      clearInterval(testInterval);
+      testInterval = null;
+    } else {
+      testInterval = setInterval(test, 400);
+    }
+  }
+}
+
+var testInterval = null;
+test();
+
+function randomColor() {
+  return 'rgba('+pastel(55,200)+','+pastel(65,20)+','+pastel(25,0)+',1)';
+}
+  
+function pastel(n,m) {
+  return (Math.random() * n + m)|0;
+}
+
+</script>
+</html>

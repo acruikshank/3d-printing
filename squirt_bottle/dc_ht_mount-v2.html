@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>squirt automator - dc high torque mount .v2</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="../FileSaver.js"></script>
+    <script src="../three.min.js"></script>
+    <script src="../csg.js"></script>
+    <script src="../orbit_controls.js"></script>
+    <script src="../ThreeCSG.js"></script>
+    <script src="../cad.js"></script>
+    <script src="../../manifold/manifold.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+// All dimensions in millimeters
+var PREPARE_FOR_PRINTING = true;
+var CYLINDER_QUALITY = PREPARE_FOR_PRINTING ? 100 : 40;
+
+var MOTOR_RADIUS = 13.5;
+var MOTOR_OUTER_RADIUS = MOTOR_RADIUS + 2.5;
+var MOTOR_DEPTH = 55;
+var TOP_DEPTH = 5;
+
+var SCREW_OFFSET = { x: 6, y: -20 };
+var SCREW_OUTER_Y = SCREW_OFFSET.y - 6;
+var BASE_DEPTH = 4;
+
+var NECK_X = 30;
+var NECK_RADIUS = 12;
+var NECK_CENTER_Z = BASE_DEPTH + 17;
+var ARM_LENGTH = NECK_X;
+var ARM_HEIGHT = 18;
+var HEAD_GAP = 30;
+
+var BIG_SCREW_RADIUS = 1.8;
+var BIG_SCREW_HEAD_RADIUS = 4.4;
+var BIG_SCREW_HEAD_DEPTH = 4;
+var NUMBER_FOUR_SCREW_OUTER_RADIUS = 1.7;
+var NUMBER_FOUR_SCREW_RADIUS = 1.4;
+var DRIVE_HOLE_RADIUS = 4.5;
+var MOUNT_SCREW_NEAR_OFFSET = 8;
+var MOUNT_SCREW_FAR_OFFSET = 10;
+var CONNECTOR_SCREW_DEPTH = 36;
+var CONNECTOR_HEAD_RADIUS = 3;
+var CONNECTOR_SCREW_HEAD_DEPTH = 20;
+
+var CONTACT_DEPTH = 4;
+var CONTACT_WIDTH = 2;
+
+var M = manifold;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  var material = new THREE.MeshPhongMaterial( { color: 0xffffff } );
+
+  var full = body();
+  var bottom = full.clone().subtract(CSG.cube({
+    center: [0,0,BASE_DEPTH+MOTOR_DEPTH+TOP_DEPTH],
+    radius: [3*ARM_HEIGHT,3*ARM_HEIGHT, BASE_DEPTH+MOTOR_DEPTH+TOP_DEPTH - NECK_CENTER_Z - HEAD_GAP/2]
+  }))
+
+  var mesh = new THREE.Mesh(THREE.CSG.fromCSG(bottom), material );
+  a3d.cad.addMesh(mesh, 'dc_ht_mount_bottom')
+
+  var top = addWiring(full.clone().subtract(CSG.cube({
+    center: [0,0,0],
+    radius: [3*ARM_HEIGHT,3*ARM_HEIGHT, NECK_CENTER_Z + HEAD_GAP/2]
+  })));
+
+  var geometry = THREE.CSG.fromCSG(top);
+  translateGeometry(geometry, 0, 0, -NECK_CENTER_Z - HEAD_GAP/2);
+  rotateGeometry(geometry, Math.PI, 0, 0);
+  translateGeometry(geometry, 0, 50, BASE_DEPTH+MOTOR_DEPTH+TOP_DEPTH-NECK_CENTER_Z - HEAD_GAP/2);
+  mesh = new THREE.Mesh(geometry, material );
+  a3d.cad.addMesh(mesh, 'dc_ht_mount_top')
+}
+
+function body() {
+  return base()
+    .union(CSG.cube({   // arm
+      center: [ARM_LENGTH/2, 0, (BASE_DEPTH+MOTOR_DEPTH + TOP_DEPTH)/2],
+      radius: [ARM_LENGTH/2, ARM_HEIGHT/2, (BASE_DEPTH+MOTOR_DEPTH + TOP_DEPTH)/2],
+    }))
+    .subtract(CSG.cylinder({  // motor socket
+      start: [0,0,BASE_DEPTH],
+      end: [0,0,BASE_DEPTH + MOTOR_DEPTH],
+      radius: MOTOR_RADIUS,
+      slices: CYLINDER_QUALITY
+    }))
+    .subtract(CSG.cylinder({  // neck hole
+      start: [NECK_X, SCREW_OUTER_Y, NECK_CENTER_Z],
+      end: [NECK_X, MOTOR_OUTER_RADIUS, NECK_CENTER_Z],
+      radius: NECK_RADIUS,
+      slices: CYLINDER_QUALITY
+    }))
+    .subtract(bigScrewSocket())  // attach screw
+    .subtract(CSG.cylinder({  // drive hole
+      start: [0, 0, -1],
+      end: [0, 0, BASE_DEPTH +MOTOR_DEPTH+TOP_DEPTH+ 1],
+      radius: DRIVE_HOLE_RADIUS,
+      slices: CYLINDER_QUALITY/4
+    }))
+    .subtract(CSG.cube({  // head gap
+      center: [0, SCREW_OUTER_Y, NECK_CENTER_Z],
+      radius: [2*MOTOR_OUTER_RADIUS, -SCREW_OUTER_Y-ARM_HEIGHT+3, HEAD_GAP/2]
+    }))
+    // motor mount screw holes
+    .subtract(mountScrew(MOUNT_SCREW_NEAR_OFFSET, MOUNT_SCREW_FAR_OFFSET))
+    .subtract(mountScrew(-MOUNT_SCREW_NEAR_OFFSET, -MOUNT_SCREW_FAR_OFFSET))
+    // profile
+    .subtract(sideProfile())
+
+    // connectors
+    .subtract(connectorScrew(MOTOR_RADIUS + 3, 4.5))
+    .subtract(connectorScrew(MOTOR_RADIUS + 3, -4.5))
+}
+
+function addWiring(body) {
+  return body.subtract(CSG.cube({
+      center: [0,0,BASE_DEPTH+MOTOR_DEPTH],
+      radius: [CONTACT_WIDTH/2, MOTOR_RADIUS, CONTACT_DEPTH]
+    }))
+    .subtract(CSG.cylinder({
+        start: [0,0,BASE_DEPTH + MOTOR_DEPTH-1],
+        end: [0,0,BASE_DEPTH + MOTOR_DEPTH + CONTACT_DEPTH],
+        radius: MOTOR_RADIUS,
+        slices: CYLINDER_QUALITY
+      })
+      .subtract(CSG.cylinder({
+        start: [0,0,BASE_DEPTH],
+        end: [0,0,BASE_DEPTH + MOTOR_DEPTH + CONTACT_DEPTH + 1],
+        radius: MOTOR_RADIUS - CONTACT_WIDTH,
+        slices: CYLINDER_QUALITY
+      }))
+      .subtract(CSG.cube({
+        center: [-MOTOR_RADIUS, 0, BASE_DEPTH+MOTOR_DEPTH],
+        radius: [MOTOR_RADIUS-CONTACT_WIDTH/2, MOTOR_RADIUS+1, CONTACT_DEPTH+1]
+      }))
+    )
+    .subtract(CSG.cube({
+      center: [MOTOR_RADIUS, 0, NECK_CENTER_Z + HEAD_GAP/2],
+      radius: [CONTACT_WIDTH, CONTACT_WIDTH, BASE_DEPTH+MOTOR_DEPTH+CONTACT_DEPTH - NECK_CENTER_Z - HEAD_GAP/2]
+    }))
+    .subtract(CSG.cube({
+      center: [ARM_LENGTH, 0, NECK_CENTER_Z + HEAD_GAP/2],
+      radius: [ARM_LENGTH, CONTACT_WIDTH, CONTACT_WIDTH]
+    }))
+}
+
+function base() {
+  var csg = M.CSGRenderer();
+  var splines = [M.Path([0,0,0]).line([0,0,BASE_DEPTH+MOTOR_DEPTH+TOP_DEPTH])];
+  var vertices = M.RibParameterizedPath( M.RibTransform(splines, 2), profile, CYLINDER_QUALITY );
+  M.lift(vertices).generate( M.facers( M.skin, M.closeEdge, M.capTop, M.capBottom ) ).render(csg.renderer);
+  return csg.csgObject();
+
+  function profile(vs) {
+    var v = vs[0];
+    return M.Path([0, MOTOR_OUTER_RADIUS,v.z])
+      .arc([MOTOR_OUTER_RADIUS, MOTOR_OUTER_RADIUS, v.z], [MOTOR_OUTER_RADIUS, 0, v.z], CYLINDER_QUALITY/4)
+      .curve([[MOTOR_OUTER_RADIUS, .8*SCREW_OUTER_Y, v.z],
+              [.6*MOTOR_OUTER_RADIUS, SCREW_OUTER_Y, v.z],
+              [SCREW_OFFSET.x, SCREW_OUTER_Y, v.z]], CYLINDER_QUALITY/4)
+      .curve([[0, SCREW_OUTER_Y, v.z],
+              [-MOTOR_OUTER_RADIUS, .4*SCREW_OUTER_Y, v.z],
+              [-MOTOR_OUTER_RADIUS, 0, v.z]], CYLINDER_QUALITY/4)
+      .arc([-MOTOR_OUTER_RADIUS, MOTOR_OUTER_RADIUS, v.z],[0,MOTOR_OUTER_RADIUS, v.z], CYLINDER_QUALITY/4)
+  }
+}
+
+function bigScrewSocket() {
+  var csg = M.CSGRenderer();
+  var splines = [M.Path([0,BIG_SCREW_HEAD_RADIUS,-1])
+    .line([0,BIG_SCREW_HEAD_RADIUS,0/*BASE_DEPTH*/])
+    .line([0,BIG_SCREW_RADIUS,/*BASE_DEPTH+*/BIG_SCREW_HEAD_DEPTH])
+    .line([0,BIG_SCREW_RADIUS,BASE_DEPTH+MOTOR_DEPTH+TOP_DEPTH+1])
+  ];
+  var vertices = M.RibParameterizedPath( M.RibTransform(splines, 4), profile, CYLINDER_QUALITY );
+  M.lift(vertices).generate( M.facers( M.skin, M.closeEdge, M.capTop, M.capBottom ) ).render(csg.renderer);
+  return csg.csgObject();
+
+  function profile(vs) {
+    var v = vs[0];
+    return M.Path([SCREW_OFFSET.x,SCREW_OFFSET.y-v.y,v.z])
+      .arc([SCREW_OFFSET.x-v.y,SCREW_OFFSET.y-v.y,v.z], [SCREW_OFFSET.x-v.y,SCREW_OFFSET.y,v.z], CYLINDER_QUALITY/4)
+      .arc([SCREW_OFFSET.x-v.y,SCREW_OFFSET.y+v.y,v.z], [SCREW_OFFSET.x,SCREW_OFFSET.y+v.y,v.z], CYLINDER_QUALITY/4)
+      .arc([SCREW_OFFSET.x+v.y,SCREW_OFFSET.y+v.y,v.z], [SCREW_OFFSET.x+v.y,SCREW_OFFSET.y,v.z], CYLINDER_QUALITY/4)
+      .arc([SCREW_OFFSET.x+v.y,SCREW_OFFSET.y-v.y,v.z], [SCREW_OFFSET.x,SCREW_OFFSET.y-v.y,v.z], CYLINDER_QUALITY/4)
+  }
+}
+
+
+function sideProfile() {
+  return extrude([0,MOTOR_OUTER_RADIUS+1,0],[0,-MOTOR_OUTER_RADIUS-1,0], profile, CYLINDER_QUALITY);
+  function profile(vs) {
+    var v = vs[0];
+    return M.Path([-MOTOR_OUTER_RADIUS - 1, v.y, BASE_DEPTH])
+      .line([-MOTOR_OUTER_RADIUS - 1, v.y, BASE_DEPTH + MOTOR_DEPTH])
+      .curve([[MOTOR_OUTER_RADIUS, v.y, BASE_DEPTH + MOTOR_DEPTH], [MOTOR_RADIUS, v.y, BASE_DEPTH + MOTOR_DEPTH/2]])
+      .curve([[MOTOR_RADIUS, v.y, BASE_DEPTH],[-MOTOR_OUTER_RADIUS, v.y, BASE_DEPTH]])
+  }
+}
+
+function mountScrew(start, end) {
+  return CSG.cylinder({
+      start: [start, 0, -1],
+      end: [start, 0, BASE_DEPTH + 1],
+      radius: NUMBER_FOUR_SCREW_OUTER_RADIUS,
+      slices: CYLINDER_QUALITY/4
+    })
+    .union(CSG.cube({
+      center: [(start+end)/2, 0, BASE_DEPTH/2],
+      radius: [Math.abs(end - start)/2, NUMBER_FOUR_SCREW_OUTER_RADIUS, BASE_DEPTH/2 + 1]
+    }))
+    .union(CSG.cylinder({
+      start: [end, 0, -1],
+      end: [end, 0, BASE_DEPTH + 1],
+      radius: NUMBER_FOUR_SCREW_OUTER_RADIUS,
+      slices: CYLINDER_QUALITY/4
+    }))
+}
+
+function connectorScrew(x, y) {
+  return CSG.cylinder({
+      start: [x, y, BASE_DEPTH+MOTOR_DEPTH+TOP_DEPTH - CONNECTOR_SCREW_DEPTH],
+      end: [x, y, BASE_DEPTH+MOTOR_DEPTH+TOP_DEPTH +1],
+      radius: NUMBER_FOUR_SCREW_RADIUS,
+      slices: CYLINDER_QUALITY/4
+    })
+    .union(CSG.cylinder({
+        start: [x, y, BASE_DEPTH+MOTOR_DEPTH+TOP_DEPTH - CONNECTOR_SCREW_HEAD_DEPTH],
+        end: [x, y, BASE_DEPTH+MOTOR_DEPTH+TOP_DEPTH +1],
+        radius: CONNECTOR_HEAD_RADIUS,
+        slices: CYLINDER_QUALITY/4
+      }))
+}
+
+function extrude(start, end, pathFunction, pathPoints) {
+  var csg = M.CSGRenderer();
+  var splines = [M.Path(start).line(end)];
+  var vertices = M.RibParameterizedPath( M.RibTransform(splines, 2), pathFunction, pathPoints );
+  M.lift(vertices).generate( M.facers( M.skin, M.closeEdge, M.capTop, M.capBottom ) ).render(csg.renderer);
+  return csg.csgObject();
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+
+    </script>
+
+  </body>
+</html>

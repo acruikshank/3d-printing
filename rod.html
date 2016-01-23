@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>rod</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="FileSaver.js"></script>
+    <script src="three.min.js"></script>
+    <script src="csg.js"></script>
+    <script src="orbit_controls.js"></script>
+    <script src="ThreeCSG.js"></script>
+    <script src="cad.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+// All dimensions in millimeters
+var HEIGHT = 2.5;
+var THICKNESS = 1;
+var CYLINDER_QUALITY = 50;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.animate();
+
+function addGeometry() {
+  var cylinder = THREE.CSG.fromCSG(CSG.cylinder({
+    start: [0, 0, 0],
+    end: [0,0,40],
+    radius: 2.45,
+    slices: CYLINDER_QUALITY
+  }));
+
+  var mesh = new THREE.Mesh(cylinder, material('#ffff66'));
+  a3d.cad.addMesh(mesh, 'rod')
+
+}
+
+function cylinder(radius) {
+  return THREE.CSG.fromCSG(CSG.cylinder({
+    start: [0, 0, -HEIGHT],
+    end: [0,0,HEIGHT],
+    radius: radius,
+    slices: CYLINDER_QUALITY
+  }).subtract(CSG.cylinder({
+    start: [0, 0, -HEIGHT - 1],
+    end: [0,0,HEIGHT + 1],
+    radius: radius-THICKNESS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cube({
+    center: [0, radius, HEIGHT],
+    radius: [1,.5,1]
+  })))
+}
+
+
+function cubeFromCorners(c1, c2) {
+  return {
+    center: c1.map(function(c,i) {return c+(c2[i]-c)/2}),
+    radius: c1.map(function(c,i) {return Math.abs(c2[i]-c)/2}),
+  }
+}
+
+function material( color ) {
+  return new THREE.MeshPhongMaterial( { color: color } );
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+function scaleGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeScale(x,y,z);
+  g.applyMatrix(matrix);
+}
+
+
+    </script>
+
+  </body>
+</html>

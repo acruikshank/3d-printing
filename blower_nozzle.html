@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Blower Nozzle</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="FileSaver.js"></script>
+    <script src="three.min.js"></script>
+    <script src="csg.js"></script>
+    <script src="orbit_controls.js"></script>
+    <script src="ThreeCSG.js"></script>
+    <script src="cad.js"></script>
+    <script src="../manifold/manifold.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+var M = manifold;
+
+var PREPARE_FOR_PRINTING = true;
+var CYLINDER_QUALITY = 128;
+
+var FAN_COUPLING_RADIUS = 40;
+var FAN_COUPLING_INNER_RADIUS = 38.5;
+var FAN_COUPLING_CORNER_RADIUS = 4;
+var FAN_COUPLING_HEIGHT = 3;
+var FAN_COUPLING_CUTOUT = 20;
+var SCREW_HOLE_OFFSET = 4;
+var SCREW_HOLE_RADIUS = 1.5;
+var NOZZLE_OUTER_RADIUS = 48.5;
+var NOZZLE_INNER_RADIUS = NOZZLE_OUTER_RADIUS - 2;
+var NOZZLE_LIP_HEIGHT = 25;
+var ORING_HEIGHT = 25;
+var ORING_RADIUS = 1;
+var NOZZLE_HEIGHT = 28;
+
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  if (PREPARE_FOR_PRINTING) {
+    var csgRenderer = M.CSGRenderer();
+    var renderer = csgRenderer.renderer;
+  } else {
+    var threeGeometry = M.ThreeJSRenderer();
+    var geometry = threeGeometry.geometry;
+    var renderer = threeGeometry.renderer;
+  }
+
+  var spine = M.Path([FAN_COUPLING_RADIUS,0,0])
+    .line([FAN_COUPLING_RADIUS,0,FAN_COUPLING_HEIGHT])
+    .line([FAN_COUPLING_RADIUS,0,FAN_COUPLING_HEIGHT])
+    .line([NOZZLE_OUTER_RADIUS,0,2*NOZZLE_LIP_HEIGHT/5])
+
+    .line([NOZZLE_OUTER_RADIUS,0,NOZZLE_LIP_HEIGHT],5)
+    .line([NOZZLE_OUTER_RADIUS,0,ORING_HEIGHT-ORING_RADIUS])
+
+    .curve([[NOZZLE_OUTER_RADIUS-ORING_RADIUS,0,ORING_HEIGHT-ORING_RADIUS],
+            [NOZZLE_OUTER_RADIUS-ORING_RADIUS,0,ORING_HEIGHT]],10)
+    .curve([[NOZZLE_OUTER_RADIUS-ORING_RADIUS,0,ORING_HEIGHT+ORING_RADIUS],
+            [NOZZLE_OUTER_RADIUS,0,ORING_HEIGHT+ORING_RADIUS]],10)
+
+    .line([NOZZLE_OUTER_RADIUS,0,NOZZLE_HEIGHT])
+    .line([NOZZLE_INNER_RADIUS,0,NOZZLE_HEIGHT])
+    .curve([
+      rotateXY([NOZZLE_INNER_RADIUS,0,2*NOZZLE_HEIGHT/3], 5*Math.PI/128),
+      rotateXY([lerp(FAN_COUPLING_INNER_RADIUS,NOZZLE_INNER_RADIUS,.25),0,NOZZLE_HEIGHT/3], 10*Math.PI/128),
+      rotateXY([FAN_COUPLING_INNER_RADIUS,0,0], 15*Math.PI/128)
+    ], 12);
+
+
+  M.lift(spine.vertices(44,0))
+    .generate(
+      M.Sequencer([
+        [2, M.VertexParameterizedPath(fanCouplingPath, CYLINDER_QUALITY)],
+        [1, M.VertexParameterizedPath(fanCouplingTopPath, 8)],
+        [1, M.CircleRib(8, [0,0,1])],
+        [1, M.CircleRib(16, [0,0,1], null, -Math.PI/16)],
+        [1, M.CircleRib(32, [0,0,1], null, -3*Math.PI/32)],
+        [1, M.CircleRib(64, [0,0,1], null, -7*Math.PI/64)],
+        [37, M.CircleRib(CYLINDER_QUALITY, [0,0,1], null, -15*Math.PI/128)],
+        ]),
+      M.facers( M.closeEdge, M.skin, M.capTube )
+    )
+    .render(renderer);
+
+
+  if (PREPARE_FOR_PRINTING) {
+    var screwHole = FAN_COUPLING_RADIUS - SCREW_HOLE_OFFSET;
+    var geometry = THREE.CSG.fromCSG(
+      csgRenderer.csgObject()
+        .subtract(CSG.cylinder({
+          start: [screwHole, screwHole, -1],
+          end: [screwHole, screwHole, FAN_COUPLING_HEIGHT+1],
+          radius: SCREW_HOLE_RADIUS,
+          slices: 10
+        }))
+        .subtract(CSG.cylinder({
+          start: [-screwHole, screwHole, -1],
+          end: [-screwHole, screwHole, FAN_COUPLING_HEIGHT+1],
+          radius: SCREW_HOLE_RADIUS,
+          slices: 10
+        }))
+        .subtract(CSG.cylinder({
+          start: [screwHole, -screwHole, -1],
+          end: [screwHole, -screwHole, FAN_COUPLING_HEIGHT+1],
+          radius: SCREW_HOLE_RADIUS,
+          slices: 10
+        }))
+        .subtract(CSG.cylinder({
+          start: [-screwHole, -screwHole, -1],
+          end: [-screwHole, -screwHole, FAN_COUPLING_HEIGHT+1],
+          radius: SCREW_HOLE_RADIUS,
+          slices: 10
+        }))
+    );
+  } else {
+    geometry.computeBoundingSphere();
+    geometry.computeFaceNormals();
+  }
+
+  addMesh(geometry, '#ffffff', 'nozzle');
+}
+
+function lerp(a, b, x) {
+  return a + x*(b-a);
+}
+
+function rotateXY(p, angle) {
+  var sa = Math.sin(angle), ca = Math.cos(angle);
+  return [p[0]*ca + p[1]*sa, p[1]*ca - p[0]*sa, p[2] ];
+}
+
+function CircleTransformer(vertexSink) {
+  var segments = [6,6,6,6,6,12,24,48,80];
+  return function( vertex ) {
+    M.CircleRib( segments[0], [0,0,1] )(vertexSink)(vertex);
+    if (segments.length>1) segments = segments.slice(1);
+  }
+}
+
+function fanCouplingPath(profile) {
+  var r = FAN_COUPLING_RADIUS, cr = FAN_COUPLING_CORNER_RADIUS;
+  return M.Path([r, cr-r, profile.z])
+    .curve([[r, -r, profile.z], [r-cr, -r, profile.z]])
+    .line([cr-r, -r, profile.z])
+    .curve([[-r, -r, profile.z], [-r, cr-r, profile.z]])
+    .line([-r, r-cr, profile.z])
+    .curve([[-r, r, profile.z], [cr-r, r, profile.z]])
+    .line([r-cr, r, profile.z])
+    .curve([[r, r, profile.z], [r, r-cr, profile.z]])
+}
+
+function fanCouplingTopPath(profile) {
+  var r = FAN_COUPLING_RADIUS, cr = FAN_COUPLING_CUTOUT;
+  return M.Path([r, cr-r, profile.z])
+    .line([r-cr, -r, profile.z])
+    .line([cr-r, -r, profile.z])
+    .line([-r, cr-r, profile.z])
+    .line([-r, r-cr, profile.z])
+    .line([cr-r, r, profile.z])
+    .line([r-cr, r, profile.z])
+    .line([r, r-cr, profile.z])
+}
+
+function addMesh( geometry, color, name ) {
+  var material = new THREE.MeshPhongMaterial( { color: color } );
+  var mesh = new THREE.Mesh(geometry, material );
+  a3d.cad.addMesh(mesh, name)
+}
+
+
+    </script>
+  </body>
+</html>
+

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Teensyduino Header</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="FileSaver.js"></script>
+    <script src="three.min.js"></script>
+    <script src="csg.js"></script>
+    <script src="orbit_controls.js"></script>
+    <script src="ThreeCSG.js"></script>
+    <script src="cad.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+var PREPARE_FOR_PRINTING = true;
+
+var HOLE_SPACING = 2.51;
+var CENTER_SPACING = 7.62;
+var MARGIN = 2.6;
+var HOLE_RADIUS = .7;
+var HOLES_PER_SIDE = 14;
+var WIDTH = 3*HOLE_SPACING + CENTER_SPACING + 2*MARGIN;
+var LENGTH = (HOLES_PER_SIDE-1)*HOLE_SPACING + 2*MARGIN;
+var HEIGHT = 3.2;
+var EDGE_THICKNESS = 6;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+
+  var header = CSG.cube({
+    radius: [WIDTH/2, LENGTH/2, HEIGHT/2],
+    center: [0,0,0]
+  }).subtract(CSG.cube({
+    radius: [WIDTH/2 - EDGE_THICKNESS, LENGTH/2 - EDGE_THICKNESS, HEIGHT],
+    center: [0,0,0]
+  }));
+
+  for (var i=0; i<HOLES_PER_SIDE; i++) {
+    var x = WIDTH/2 - MARGIN;
+    var y = LENGTH/2 - MARGIN - i*HOLE_SPACING;
+    header = header.subtract(CSG.cube({
+      center: [x,y,0],
+      radius: [HOLE_RADIUS, HOLE_RADIUS, HEIGHT]
+    })).subtract(CSG.cube({
+      center: [-x,y,0],
+      radius: [HOLE_RADIUS, HOLE_RADIUS, HEIGHT]
+    }))
+  }
+
+  var geometry = THREE.CSG.fromCSG(header);
+  addMesh( geometry, '#ffffff', 'header');
+}
+
+function addMesh( geometry, color, name ) {
+  var material = new THREE.MeshPhongMaterial( { color: color } );
+  var mesh = new THREE.Mesh(geometry, material );
+  a3d.cad.addMesh(mesh, name, true)
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+function scaleGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeScale(x,y,z);
+  g.applyMatrix(matrix);
+}
+
+    </script>
+  </body>
+</html>

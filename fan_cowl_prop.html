@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Fan Cowl Prop</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="FileSaver.js"></script>
+    <script src="three.js"></script>
+    <script src="csg.js"></script>
+    <script src="orbit_controls.js"></script>
+    <script src="ThreeCSG.js"></script>
+    <script src="cad.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+var CYLINDER_QUALITY = 50;
+var PREPARE_FOR_PRINTING = false;
+
+var PART_TOLERANCE = .1;
+
+var BASE_WIDTH = 48;
+var BASE_EDGE_RADIUS = 2;
+var FOOT_WIDTH = 6;
+var FOOT_HEIGHT = 2;
+var M3_OUTER_RADIUS = 1.5;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.animate();
+
+function addGeometry() {
+  var ctx = new THREE.Path();
+  /*
+  var path = Path(ctx)
+    .start(0, -BASE_WIDTH/2)
+    .roundAll(2, -BASE_WIDTH/2, -BASE_WIDTH/2,
+              -BASE_WIDTH/2, -BASE_WIDTH/2 + FOOT_WIDTH,
+               BASE_WIDTH/2, -BASE_WIDTH/2 + FOOT_WIDTH,
+               BASE_WIDTH/2, -BASE_WIDTH/2,
+               0, -BASE_WIDTH/2);
+
+  var propGeometry = ctx.toShapes()[0].extrude({amount:FOOT_HEIGHT, bevelEnabled:false, curveSegments:CYLINDER_QUALITY/4});
+  */
+  var propGeometry = new THREE.Geometry();
+  permute([[-28,28],[-28,28],[-28,28]], function(v) { propGeometry.vertices.push( new THREE.Vector3(v[0],v[1],v[2]) ) });
+  facePath(propGeometry, [2,0,1,5,3,7,6,5,4,0,6,2,3,1])
+  propGeometry.computeCentroids();
+  propGeometry.computeFaceNormals();
+  propGeometry.computeVertexNormals();
+
+  if (PREPARE_FOR_PRINTING)
+    rotateGeometry(propGeometry, Math.PI/2, 0, 0 );
+  var propMesh = new THREE.Mesh(propGeometry, material('#6699ff'));
+  a3d.cad.addMesh(propMesh, 'prop')
+}
+
+function permute( options, f, fixed ) {
+  for (var i=0, next; next=(fixed||[]).concat([options[0][i]]), i<options[0].length; i++)
+    options.length < 2 ? f(next) : permute(options.slice(1),f,next)
+}
+
+function facePath( geometry, indices ) {
+  for (var i=0,a,b,c; c = indices[i], i<indices.length; i++, a=b, b=c)
+    if (i>1) geometry.faces.push( i%2 ? new THREE.Face3(a,c,b) : new THREE.Face3(a,b,c) )
+}
+
+function Path(ctx) {
+  var lastX = 0, lastY = 0, path;
+  return path = {
+    start: function(x,y) { ctx.moveTo(lastX=x, lastY=y); return path; },
+    line: function(x,y) { ctx.lineTo(lastX=x, lastY=y); return path; },
+    roundAll: function(r) {
+      for (var i=1; i<arguments.length-3; i+=2)
+        roundCorner( ctx, lastX, lastY, lastX=arguments[i], lastY=arguments[i+1], arguments[i+2], arguments[i+3], r, i>=arguments.length-4);
+      lastX=arguments[i]; lastY=arguments[i+1];
+      return path;
+    }
+  }
+}
+
+function roundCorner( ctx, sx, sy, cx, cy, ex, ey, radius, cap ) {
+  var dx1=cx-sx, dy1=cy-sy, l1 = Math.sqrt(dx1*dx1+dy1*dy1);
+  var csx = sx + (l1-radius)/l1 * (cx-sx), csy = sy + (l1-radius)/l1 * (cy-sy);
+  var dx2=ex-cx, dy2=ey-cy, l2 = Math.sqrt(dx2*dx2+dy2*dy2);
+  var cex = cx + radius/l2 * (ex-cx), cey = cy + radius / l2 * (ey-cy);
+
+  ctx.lineTo( csx, csy );
+  ctx.quadraticCurveTo( cx, cy, cex, cey );
+  if (cap) ctx.lineTo( ex, cy );
+}
+
+function roundedRect(x1,y1,x2,y2,radii, open) {
+  var ctx = new THREE.Path()
+  radii = radii || {};
+  open = open || {};
+  if (radii.all) radii.tl=radii.tr=radii.bl=radii.br=radii.all;
+  if (radii.t) radii.tl=radii.tr=radii.t;
+  if (radii.l) radii.tl=radii.bl=radii.l;
+  if (radii.b) radii.bl=radii.br=radii.b;
+  if (radii.r) radii.tr=radii.br=radii.r;
+
+  ctx.moveTo(x2-(radii.br||0),y2);
+  ctx[open.b?'moveTo':'lineTo'](x1+(radii.bl||0),y2);
+  if (radii.bl) ctx.quadraticCurveTo(x1,y2,x1,y2+radii.bl);
+  ctx[open.l?'moveTo':'lineTo'](x1,y1-(radii.tl||0));
+  if (radii.tl) ctx.quadraticCurveTo(x1,y1,x1+radii.tl,y1);
+
+  ctx[open.t?'moveTo':'lineTo'](x2 - (radii.tr || 0), y1);
+  if (radii.tr) ctx.quadraticCurveTo(x2,y1,x2,y1-radii.tr);
+  ctx[open.r?'moveTo':'lineTo'](x2,y2+(radii.br||0));
+  if (radii.br) ctx.quadraticCurveTo(x2,y2,x2-radii.br,y2);
+
+  return ctx;
+}
+
+
+function cubeFromCorners(c1, c2) {
+  return {
+    center: c1.map(function(c,i) {return c+(c2[i]-c)/2}),
+    radius: c1.map(function(c,i) {return Math.abs(c2[i]-c)/2}),
+  }
+}
+
+function material( color ) {
+  return new THREE.MeshPhongMaterial( { color: color } );
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+function scaleGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeScale(x,y,z);
+  g.applyMatrix(matrix);
+}
+
+
+    </script>
+
+  </body>
+</html>

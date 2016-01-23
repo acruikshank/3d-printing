@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Ant Trap</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="FileSaver.js"></script>
+    <script src="three.min.js"></script>
+    <script src="csg.js"></script>
+    <script src="orbit_controls.js"></script>
+    <script src="ThreeCSG.js"></script>
+    <script src="cad.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+var PREPARE_FOR_PRINTING = true;
+var CYLINDER_QUALITY = PREPARE_FOR_PRINTING ? 50 : 20;
+
+var PART_TOLERANCE = .1;
+
+var TRAP_RADIUS = 30;
+var TRAP_INNER_RADIUS = 25;
+var TRAP_BASE_HEIGHT = 5;
+var INNER_CONE_TOP = 3;
+var INNER_CONE_BOTTOM = TRAP_INNER_RADIUS - 3;
+var DISH_BASE = 1;
+var DISH_RADIUS = 17;
+var DISH_HEIGHT = 7;
+var TUNNELS = 6;
+var TUNNEL_RADIUS = 5;
+var TUNNEL_HEIGHT =23;
+
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+
+  var centerCone = new THREE.CylinderGeometry( INNER_CONE_TOP, INNER_CONE_BOTTOM, TRAP_RADIUS, CYLINDER_QUALITY)
+  rotateGeometry(centerCone, Math.PI/2, 0, 0);
+  translateGeometry(centerCone, 0, 0, TRAP_RADIUS/2)
+
+  // (tr-tir)/bh = (x-tr)/(tr) => x = (tr-tir)*(tr)/bh + tr
+
+  var upperRadius = (TRAP_RADIUS - TRAP_INNER_RADIUS)*(TRAP_RADIUS)/TRAP_BASE_HEIGHT + TRAP_RADIUS;
+  var base = new THREE.CylinderGeometry( TRAP_INNER_RADIUS, upperRadius, 
+                                         TRAP_RADIUS + TRAP_BASE_HEIGHT, CYLINDER_QUALITY)
+  rotateGeometry(base, -Math.PI/2, 0, 0);
+  translateGeometry(base, 0, 0, (TRAP_RADIUS + TRAP_BASE_HEIGHT)/2)
+
+  // dish
+  var ctrl1 = .8*DISH_RADIUS; 
+  var ctrl2 = DISH_RADIUS + .2 * (TRAP_INNER_RADIUS - DISH_RADIUS);
+  var ctx = new THREE.Path();
+  ctx.moveTo( 0, -DISH_BASE);
+  ctx.bezierCurveTo(ctrl1, -DISH_BASE, ctrl1, -DISH_HEIGHT, DISH_RADIUS, -DISH_HEIGHT);
+  ctx.bezierCurveTo(ctrl2, -DISH_HEIGHT, ctrl2, -DISH_HEIGHT, TRAP_INNER_RADIUS, 0);
+  ctx.lineTo( 0, 0);
+
+  var dishGeometry = new THREE.LatheGeometry( ctx.getPoints(CYLINDER_QUALITY, true).map(function(v) { 
+    return new THREE.Vector3(v.x,0,v.y)}), CYLINDER_QUALITY )
+  rotateGeometry(dishGeometry, Math.PI, 0, 0);
+  
+
+  var trap = THREE.CSG.toCSG(new THREE.IcosahedronGeometry(TRAP_RADIUS, 1))
+
+  .subtract(CSG.cube({
+    center:[0, 0, -TRAP_RADIUS],
+    radius:[2*TRAP_RADIUS, 2*TRAP_RADIUS, TRAP_RADIUS]
+  }))
+
+  .intersect( THREE.CSG.toCSG(base) )
+  .subtract( THREE.CSG.toCSG(centerCone) );
+
+  for (var i=0; i<TUNNELS; i++) {
+    var tunnelGeometry = THREE.CSG.fromCSG(CSG.cylinder({
+      start:[0,0,TUNNEL_HEIGHT],
+      end:[TRAP_INNER_RADIUS + .5, 0, 0],
+      radius: TUNNEL_RADIUS,
+      slices: 20
+    }));
+
+    rotateGeometry(tunnelGeometry, 0, 0, 2*i*Math.PI/TUNNELS)
+
+    trap = trap.subtract(THREE.CSG.toCSG(tunnelGeometry));
+  }
+
+  if (!PREPARE_FOR_PRINTING) {
+    trap = trap.subtract(CSG.cube({
+      center:[0, -TRAP_RADIUS, 0],
+      radius:[2*TRAP_RADIUS, TRAP_RADIUS, 2*TRAP_RADIUS]
+    }))
+  }
+
+  var trapGeometry = THREE.CSG.fromCSG(trap);
+//  var trapGeometry = base;
+  THREE.GeometryUtils.merge(trapGeometry, dishGeometry)
+  addMesh( trapGeometry, '#ffffff', 'trap');
+}
+
+function addMesh( geometry, color, name ) {
+  var material = new THREE.MeshPhongMaterial( { color: color } );
+  var mesh = new THREE.Mesh(geometry, material );
+  a3d.cad.addMesh(mesh, name)
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+function scaleGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeScale(x,y,z);
+  g.applyMatrix(matrix);
+}
+
+    </script>
+  </body>
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>CUBE CSG</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #000000;
+        overflow: hidden;
+      }
+
+      #save {
+        position: absolute;
+        top:0;
+        left:0;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="save">save</button>
+
+    <script src="FileSaver.js"></script>
+    <script src="three.min.js"></script>
+    <script src="csg.js"></script>
+    <script src="ThreeCSG.js"></script>
+
+    <script>
+function stringifyVector(vec){
+  return ""+vec.x+" "+vec.y+" "+vec.z;
+}
+
+function stringifyVertex(vec){
+  return "vertex "+stringifyVector(vec)+" \n";
+}
+
+function generateSTL(geometry){
+  var vertices = geometry.vertices;
+  var tris     = geometry.faces;
+
+  stl = "solid pixel";
+  for(var i = 0; i<tris.length; i++){
+    stl += ("facet normal "+stringifyVector( tris[i].normal )+" \n");
+    stl += ("outer loop \n");
+    stl += stringifyVertex( vertices[ tris[i].a ] );
+    stl += stringifyVertex( vertices[ tris[i].b ] );
+    stl += stringifyVertex( vertices[ tris[i].c ] );
+    stl += ("endloop \n");
+    stl += ("endfacet \n");
+  }
+  stl += ("endsolid");
+
+  return stl
+}
+
+function saveSTL( geometry ){
+  
+  var stlString = generateSTL( geometry );
+  
+  var blob = new Blob([stlString], {type: 'text/plain'});
+  
+  saveAs(blob, 'cube.stl');
+}
+
+document.getElementById('save').addEventListener('click', function() {
+  saveSTL(mesh.geometry);
+})
+
+      var camera, scene, renderer;
+      var mesh, geometry;
+      var particleLight1, pointLight1;
+      var particleLight2, pointLight2;
+
+      init();
+      animate();
+
+      function init() {
+
+        renderer = new THREE.WebGLRenderer();
+        renderer.setSize( window.innerWidth, window.innerHeight );
+        document.body.appendChild( renderer.domElement );
+
+        //
+        var cubeWidth = 50
+
+        camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 1, 5*cubeWidth );
+        camera.position.z = 2*cubeWidth;
+
+        scene = new THREE.Scene();
+
+        geometry = new THREE.CubeGeometry( cubeWidth, cubeWidth, cubeWidth );
+
+
+        /*
+        var texture = THREE.ImageUtils.loadTexture( 'textures/crate.gif' );
+        texture.anisotropy = renderer.getMaxAnisotropy();
+
+        var material = new THREE.MeshBasicMaterial( { map: texture } );
+        */
+        var material = new THREE.MeshPhongMaterial( { color: 0x660066, specular: 0x66ff66, emissive: 0x333333, ambient: 0x000000, shininess: 10, shading: THREE.SmoothShading, opacity: 0.9, transparent: true } );
+
+        var cylGeometry = new THREE.CylinderGeometry( 3*cubeWidth/8, 3*cubeWidth/8, 2*cubeWidth, 100 )
+
+        var cubeCSG = new THREE.CSG.toCSG(geometry);
+        var cylCSG = new THREE.CSG.toCSG(cylGeometry);
+        var matrix = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0,0,Math.PI/2));
+        cylGeometry.applyMatrix(matrix);
+        var cylCSG2 = new THREE.CSG.toCSG(cylGeometry);
+        var matrix = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0,Math.PI/2,0));
+        cylGeometry.applyMatrix(matrix);
+        var cylCSG3 = new THREE.CSG.toCSG(cylGeometry);
+        var newGeometry = THREE.CSG.fromCSG(cubeCSG
+          .subtract(cylCSG)
+          .subtract(cylCSG2)
+          .subtract(cylCSG3));
+
+        mesh = new THREE.Mesh( newGeometry, material );
+
+        mesh.rotation.x=Math.PI/4;
+        mesh.rotation.y=Math.PI/4;
+        scene.add( mesh );
+
+
+        particleLight1 = new THREE.Mesh( new THREE.SphereGeometry( 4, 8, 8 ), new THREE.MeshBasicMaterial( { color: 0x0000ff } ) );
+        particleLight2 = new THREE.Mesh( new THREE.SphereGeometry( 4, 8, 8 ), new THREE.MeshBasicMaterial( { color: 0xff0000 } ) );
+
+        scene.add( particleLight1 );
+        scene.add( particleLight2 );
+
+        scene.add( new THREE.AmbientLight( 0x111111 ) );
+
+        var directionalLight = new THREE.DirectionalLight( /*Math.random() * */ 0xffffff, 0.125 );
+
+        directionalLight.position.x = Math.random() - 0.5;
+        directionalLight.position.y = Math.random() - 0.5;
+        directionalLight.position.z = Math.random() - 0.5;
+
+        directionalLight.position.normalize();
+
+        scene.add( directionalLight );
+
+        pointLight1 = new THREE.PointLight( 0x0000ff, 1 );
+        pointLight2 = new THREE.PointLight( 0xff0000, 1 );
+        scene.add( pointLight1 );
+        scene.add( pointLight2 );
+
+
+        renderer.render( scene, camera );
+        
+        window.addEventListener( 'resize', onWindowResize, false );
+
+      }
+
+      function onWindowResize() {
+
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize( window.innerWidth, window.innerHeight );
+
+      }
+
+      function animate(time) {
+
+        var timer=(time||0)*.0001;
+        requestAnimationFrame( animate );
+
+//        mesh.rotation.x = timer;
+//        mesh.rotation.y = timer;
+
+        particleLight1.position.x = Math.sin( timer * 7 ) * 300;
+        particleLight1.position.y = Math.cos( timer * 5 ) * 400;
+        particleLight1.position.z = Math.cos( timer * 3 ) * 300;
+        particleLight2.position.x = Math.sin( timer * 7 + Math.PI ) * 300;
+        particleLight2.position.y = Math.cos( timer * 5 + Math.PI ) * 400;
+        particleLight2.position.z = Math.cos( timer * 3 + Math.PI ) * 300;
+
+        pointLight1.position.x = particleLight1.position.x;
+        pointLight1.position.y = particleLight1.position.y;
+        pointLight1.position.z = particleLight1.position.z;
+        pointLight2.position.x = particleLight2.position.x;
+        pointLight2.position.y = particleLight2.position.y;
+        pointLight2.position.z = particleLight2.position.z;
+        renderer.render( scene, camera );
+
+      }
+
+    </script>
+
+  </body>
+</html>
