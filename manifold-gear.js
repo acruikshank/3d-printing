@@ -32,6 +32,30 @@ manifold.gear = (function() {
     return path;
   }
 
+  function rackPath( props, length ) {
+    var tanPA = Math.tan(Math.PI/2-Math.PI*props.pressureAngle/180);
+    var left = props.pitchRadius - props.outerRadius;
+    var right = props.pitchRadius - props.rootRadius;
+    var depth = right - left;
+    var sideY = depth / tanPA;
+    var pitchY = (props.pitchRadius-props.rootRadius) / tanPA;
+    var halfTooth = props.pitchRadius*Math.PI/props.numTeeth;
+    var y = 0;
+
+    var path = M.Path([right, y, 0]);
+    while (y < length) {
+      y += halfTooth - 2*pitchY;
+      path.line( [right, y, 0] );
+      y += sideY;
+      path.line( [left, y, 0] );
+      y += halfTooth - 2*sideY + 2*pitchY;
+      path.line( [left, y, 0] );
+      y += sideY;
+      path.line( [right, y, 0] );
+    }
+    return path;
+  }
+
   function gearProps( circularPitch, pressureAngle, numTeeth ) {
     var addendum = .8*circularPitch / Math.PI;
     var dedendum = 1.25 * addendum;
@@ -72,5 +96,5 @@ manifold.gear = (function() {
     ]
   }
 
-  return {gearProps:gearProps, gearPath:gearPath}
+  return {gearProps:gearProps, gearPath:gearPath, rackPath:rackPath}
 })();
