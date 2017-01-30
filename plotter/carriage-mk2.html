@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Carriage MKII</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="../FileSaver.js"></script>
+    <script src="../three.min.js"></script>
+    <script src="../manifold.js"></script>
+    <script src="../manifold-gear.js"></script>
+    <script src="../csg.js"></script>
+    <script src="../orbit_controls.js"></script>
+    <script src="../ThreeCSG.js"></script>
+    <script src="../cad.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+var M = manifold;
+var PREPARE_FOR_PRINTING = false;
+var FLIP = false;
+var CYLINDER_QUALITY = PREPARE_FOR_PRINTING ? 50 : 20;
+
+var OUTER_RADIUS = 15;
+var INNER_RADIUS = 9;
+var BASE_HEIGHT = 3;
+var SHAFT_RADIUS = 2.8;
+var SHAFT_OUTER_RADIUS = 5.5;
+var SMALL_SHAFT_LENGTH = 15.9;
+var LONG_SHAFT_LENGTH = 32.4;
+var VERTICAL_SHAFT_OUTER_RADIUS = SHAFT_RADIUS + .5;
+var VERTICAL_SHAFT_HOLDER_HEIGHT = 10;
+var EDGE_OFFSET = 12;
+var NUMBER_FOUR_SCREW_RADIUS = 1.4;
+
+var CIRCULAR_PITCH = 4;
+var PRESSURE_ANGLE = 20;
+var GEAR_TEETH = 32;
+var GEAR_PROPS = M.gear.gearProps(CIRCULAR_PITCH,PRESSURE_ANGLE,GEAR_TEETH)
+
+var RACK_OFFSET = 2;
+var GEAR_AXEL_Y = INNER_RADIUS + SHAFT_OUTER_RADIUS + RACK_OFFSET + GEAR_PROPS.pitchRadius;
+var RACK_LENGTH = GEAR_PROPS.pitchRadius * Math.PI / 2;
+var GEAR_AXEL_Z = LONG_SHAFT_LENGTH - RACK_LENGTH;
+
+
+
+
+/*//////////////////////////
+
+Parameters:
+Pitch radius
+Rack offset
+rest intercept depth
+gear width
+
+Top:
+Add rack
+
+Base:
+  Gear holder
+    Cube extension
+    profile intersection
+    axel holes
+    gear notch
+
+///////////////////////////*/
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  var geometry = THREE.CSG.fromCSG(rack());
+  addMesh( geometry, '#ffffff', 'base');
+
+  // geometry = THREE.CSG.fromCSG(base(true));
+  // if (PREPARE_FOR_PRINTING) {
+  //   translateGeometry(geometry, 0, 2*OUTER_RADIUS, 0);
+  // } else {
+  //   rotateGeometry(geometry, 0, Math.PI, 0);
+  //   translateGeometry(geometry, 0, 0, LONG_SHAFT_LENGTH);
+  // }
+  // addMesh( geometry, '#ffffff', 'top');
+}
+
+function base(top) {
+  var edge = THREE.CSG.fromCSG(radialSymetry(CSG.cube({
+    center: [0, OUTER_RADIUS, 0],
+    radius: [OUTER_RADIUS, OUTER_RADIUS-EDGE_OFFSET, 2*BASE_HEIGHT]
+  }),3));
+  rotateGeometry(edge, 0, 0, Math.PI/3);
+
+  var base = CSG.cylinder({
+    start: [0, 0, 0],
+    end: [0, 0, BASE_HEIGHT],
+    radius: OUTER_RADIUS,
+    slices: CYLINDER_QUALITY
+  })
+
+  if (top) {
+    var mount = THREE.CSG.fromCSG(radialSymetry(CSG.cylinder({
+        start: [0, INNER_RADIUS/2, BASE_HEIGHT + NUMBER_FOUR_SCREW_RADIUS],
+        end: [0, EDGE_OFFSET, BASE_HEIGHT + NUMBER_FOUR_SCREW_RADIUS],
+        radius: NUMBER_FOUR_SCREW_RADIUS + 2,
+        slices: CYLINDER_QUALITY
+      }),3)
+      .union(radialSymetry(CSG.cube({
+          center: [0, (EDGE_OFFSET + INNER_RADIUS/2)/2, BASE_HEIGHT],
+          radius: [NUMBER_FOUR_SCREW_RADIUS + 2, (EDGE_OFFSET - INNER_RADIUS/2)/2, NUMBER_FOUR_SCREW_RADIUS]
+        }),3))
+      .subtract(radialSymetry(CSG.cylinder({
+          start: [0, INNER_RADIUS/2, BASE_HEIGHT + NUMBER_FOUR_SCREW_RADIUS],
+          end: [0, EDGE_OFFSET+1, BASE_HEIGHT + NUMBER_FOUR_SCREW_RADIUS],
+          radius: NUMBER_FOUR_SCREW_RADIUS,
+          slices: CYLINDER_QUALITY
+        }),3))
+    )
+    rotateGeometry(mount, 0, 0, Math.PI/3);
+    base = base.union(THREE.CSG.toCSG(mount));
+  }
+
+  return base
+  .subtract(THREE.CSG.toCSG(edge))
+  .subtract(CSG.cylinder({
+    start: [0, 0, -1],
+    end: [0, 0, 5*BASE_HEIGHT],
+    radius: 3*INNER_RADIUS/4,
+    slices: CYLINDER_QUALITY
+  }))
+  .union(radialSymetry(CSG.cylinder({
+      start: [0, INNER_RADIUS + SHAFT_RADIUS, 0],
+      end: [0, INNER_RADIUS + SHAFT_RADIUS, VERTICAL_SHAFT_HOLDER_HEIGHT],
+      radius: VERTICAL_SHAFT_OUTER_RADIUS + (top?.2:0),
+      slices: CYLINDER_QUALITY
+  }), 3))
+  .union(radialSymetry(top?rack():gearHolder(),3))
+  .subtract(radialSymetry(CSG.cylinder({
+      start: [0, INNER_RADIUS + SHAFT_RADIUS, -1],
+      end: [0, INNER_RADIUS + SHAFT_RADIUS, VERTICAL_SHAFT_HOLDER_HEIGHT+1],
+      radius: SHAFT_RADIUS + (top?.2:0),
+      slices: CYLINDER_QUALITY
+  }),3))
+}
+
+function rack() {
+  var path = M.gear.rackPath(GEAR_PROPS, RACK_LENGTH-.0001)
+    .concat(M.Path([0,0,0])
+      .line([4,RACK_LENGTH,0])
+      .line([4,0,0])
+    );
+
+  var renderer = M.CSGRenderer();
+  M.lift(M.step(2)).generate(
+    M.Extrude(M.Path([0,0,0]).line([0,0,10])),
+    M.TransformPath(path),
+    M.facers( M.skin, M.closeEdge, M.capTop, M.capBottom )
+  ).render(renderer.renderer);
+
+  return renderer.csgObject();
+}
+
+function gearHolder() {
+  return CSG.cube({
+    center: [0, OUTER_RADIUS, 5],
+    radius: [SHAFT_OUTER_RADIUS, SHAFT_OUTER_RADIUS, 5]
+  })
+}
+
+function addMesh( geometry, color, name ) {
+  var material = new THREE.MeshPhongMaterial( { color: color } );
+  var mesh = new THREE.Mesh(geometry, material );
+  a3d.cad.addMesh(mesh, name, true)
+}
+
+
+function radialSymetry(csg, count) {
+  var geometry = THREE.CSG.fromCSG(csg)
+  for (var i=1; i<count; i++) {
+    rotateGeometry(geometry, 0, 0, 2*Math.PI/count)
+    csg = csg.union(THREE.CSG.toCSG(geometry))
+  }
+  return csg;
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+function scaleGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeScale(x,y,z);
+  g.applyMatrix(matrix);
+}
+
+    </script>
+  </body>
+</html>

@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Plotter</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="../FileSaver.js"></script>
+    <script src="../three.min.js"></script>
+    <script src="../csg.js"></script>
+    <script src="../orbit_controls.js"></script>
+    <script src="../ThreeCSG.js"></script>
+    <script src="../cad.js"></script>
+    <script src="../sylvester.js"></script>
+    <script src="../../manifold/manifold.js"></script>
+    <script src="../manifold-gear.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+// All dimensions in millimeters
+var PREPARE_FOR_PRINTING = false;
+var CYLINDER_QUALITY = PREPARE_FOR_PRINTING ? 120 : 40;
+
+var SKID_RADIUS = 30;
+var SKID_EDGE = 3;
+var SKID_HEIGHT = 1.5;
+
+var PEN_RADIUS = 6;
+var SPRING_RADIUS = 3.0;
+var SPRING_HEIGHT = 16.5;
+var SPRING_THROW = 3;
+var PEN_OUTER_RADIUS = PEN_RADIUS + 1.5;
+var PEN_HEIGHT = SPRING_HEIGHT + 2*SKID_HEIGHT;
+
+var STRING_HOLE_RADIUS = .75;
+var STRING_HOLE_PATH_RADIUS = STRING_HOLE_RADIUS + 1;
+var STRING_HOLDER_LENGTH = PEN_OUTER_RADIUS + 2*SPRING_RADIUS + 1 + STRING_HOLE_RADIUS + STRING_HOLE_PATH_RADIUS;
+var STRING_HOLDER_HEIGHT = 10 + STRING_HOLE_PATH_RADIUS;
+
+var SCREW_SOCKET_LENGTH = PEN_RADIUS + 6;
+var NUMBER_FOUR_SCREW_RADIUS = 1.4;
+var NUMBER_FOUR_SCREW_HEAD_RADIUS = 3;
+var SCREW_HEIGHT = PEN_HEIGHT;
+
+var PEN_HOLDER_OUTER_RADIUS = STRING_HOLDER_LENGTH;
+var PEN_HOLDER_BASE_HEIGHT = SKID_HEIGHT + SPRING_THROW;
+var PEN_HOLDER_HEIGHT = PEN_HEIGHT + NUMBER_FOUR_SCREW_HEAD_RADIUS;
+var PEN_HOLDER_TOLERANCE = .2;
+
+
+var STRUT_WIDTH = 8;
+var STRUT_COUNT = 6;
+
+
+var M = manifold;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  var material = new THREE.MeshPhongMaterial( { color: 0xffffff } );
+
+  var geometry = skid();
+  mesh = new THREE.Mesh(geometry, material);
+  a3d.cad.addMesh(mesh, 'plotter_head', {clean: true})
+
+  var geometry = THREE.CSG.fromCSG(holder());
+  if (PREPARE_FOR_PRINTING) {
+    rotateGeometry(geometry, Math.PI, 0, 0)
+    translateGeometry(geometry, 50, 0, 0)
+  }
+  mesh = new THREE.Mesh(geometry, material);
+  a3d.cad.addMesh(mesh, 'pen_holder', {clean: true})
+
+}
+
+function holder() {
+  var screwChannels = radialSymetry(CSG.cube({
+    center: [-PEN_HOLDER_OUTER_RADIUS, 0, PEN_HOLDER_HEIGHT/2],
+    radius: [PEN_HOLDER_OUTER_RADIUS-SCREW_SOCKET_LENGTH, NUMBER_FOUR_SCREW_HEAD_RADIUS + .2, PEN_HOLDER_HEIGHT/2 + 1],
+  }), 3)
+
+  return CSG.cylinder({
+    start: [0,0,PEN_HOLDER_BASE_HEIGHT],
+    end: [0,0,PEN_HOLDER_HEIGHT],
+    radius: PEN_HOLDER_OUTER_RADIUS,
+    slices: CYLINDER_QUALITY
+  }).subtract(CSG.cylinder({
+    start: [0,0,PEN_HOLDER_BASE_HEIGHT - 1],
+    end: [0,0,PEN_HOLDER_HEIGHT + 1],
+    radius: PEN_OUTER_RADIUS + 2*PEN_HOLDER_TOLERANCE,
+    slices: CYLINDER_QUALITY
+  }))
+  .subtract(holderCutouts())
+  .subtract(holderWireChannel())
+  .subtract(screwHoles())
+  .subtract(springs())
+  .subtract(screwChannels)
+}
+
+function skid() {
+
+  var path = M.Path([PEN_RADIUS,0,PEN_HEIGHT])
+    .line([PEN_RADIUS,0,0])
+    .line([SKID_RADIUS-SKID_EDGE, 0, 0])
+    .curve([[SKID_RADIUS,0,0],[SKID_RADIUS,0,SKID_EDGE]],10)
+    .curve([[SKID_RADIUS,0,SKID_EDGE+SKID_HEIGHT], [SKID_RADIUS - SKID_HEIGHT,0,SKID_EDGE+SKID_HEIGHT]], 10)
+    .curve([
+      [SKID_RADIUS-2*SKID_HEIGHT,0,SKID_EDGE+SKID_HEIGHT],
+      [SKID_RADIUS-2*SKID_HEIGHT,0,SKID_HEIGHT],
+      [SKID_RADIUS-3*SKID_HEIGHT,0,SKID_HEIGHT]], 10)
+    .line([PEN_OUTER_RADIUS+SKID_HEIGHT, 0, SKID_HEIGHT])
+    .curve([[PEN_OUTER_RADIUS, 0, SKID_HEIGHT], [PEN_OUTER_RADIUS, 0, 2*SKID_HEIGHT]], 10)
+    .line([PEN_OUTER_RADIUS, 0, PEN_HEIGHT])
+    .line([PEN_RADIUS, 0, PEN_HEIGHT])
+
+  var csg = M.CSGRenderer();
+  M.lift(
+    M.Lathe(path, [0,0,1], [0,0,0], 46, CYLINDER_QUALITY)
+  ).generate( M.facers( M.skin, M.closeEdge ) ).render(csg.renderer);
+  var plotter = csg.csgObject()
+    .subtract(slice())
+    .subtract(screwSlots())
+
+  var geometry = THREE.CSG.fromCSG(plotter)
+  THREE.GeometryUtils.merge(geometry, wireConnectors())
+
+  return geometry;
+}
+
+function slice() {
+  var innerRadius = PEN_OUTER_RADIUS + 2;
+  var outerRadius = SKID_RADIUS - 3*SKID_HEIGHT;
+  return CSG.cylinder({
+    start: [0,0,-1],
+    end: [0,0,20],
+    radius: outerRadius,
+    slices: CYLINDER_QUALITY
+  }).subtract(CSG.cylinder({
+    start: [0,0,-2],
+    end: [0,0,21],
+    radius: innerRadius,
+    slices: CYLINDER_QUALITY
+  }))
+  .subtract(beams(innerRadius, outerRadius))
+}
+
+function beams(innerRadius, outerRadius) {
+  var struts = CSG.cube({
+    center: [(outerRadius + innerRadius)/2, 0, 10],
+    radius: [(outerRadius - innerRadius)/2+1, STRUT_WIDTH/2, 11]
+  })
+  return radialSymetry(struts, STRUT_COUNT)
+}
+
+function screwSlots() {
+  var radius = NUMBER_FOUR_SCREW_RADIUS + .2;
+  var slot = CSG.cylinder({
+    start: [-PEN_RADIUS+5, 0, SCREW_HEIGHT],
+    end: [-PEN_OUTER_RADIUS-5, 0, SCREW_HEIGHT],
+    radius: radius,
+    slices: CYLINDER_QUALITY/4
+  }).union(CSG.cube({
+    center: [-(PEN_RADIUS+PEN_OUTER_RADIUS)/2, 0, SCREW_HEIGHT - SPRING_THROW/2],
+    radius: [10, radius, SPRING_THROW/2]
+  })).union(CSG.cylinder({
+    start: [-PEN_RADIUS+5, 0, SCREW_HEIGHT-SPRING_THROW],
+    end: [-PEN_OUTER_RADIUS-5, 0, SCREW_HEIGHT-SPRING_THROW],
+    radius: radius,
+    slices: CYLINDER_QUALITY/4
+  }))
+
+  return radialSymetry(slot, 3);
+}
+
+function geometryRadialSymetry(geometry, count) {
+  var merged = geometry.clone();
+  for (var i=1; i<count; i++) {
+    var copy = geometry.clone()
+    rotateGeometry(copy, 0, 0, i*2*Math.PI/count)
+    THREE.GeometryUtils.merge(merged, copy);
+  }
+  return merged;
+}
+
+function radialSymetry(csg, count) {
+  var geometry = THREE.CSG.fromCSG(csg)
+  for (var i=1; i<count; i++) {
+    rotateGeometry(geometry, 0, 0, 2*Math.PI/count)
+    csg = csg.union(THREE.CSG.toCSG(geometry))
+  }
+  return csg;
+}
+
+function Extrude(path, start, end, transformSteps, ribSteps) {
+  return M.PathParameterized(M.Path(start).line(end), transformSteps, ribSteps)(
+    function(offset) {
+      return path.transform(function(v) { return M.vadd(v,offset) })
+    }
+  )
+}
+
+function extrudeAlong(extrudePath, profile) {
+  var initialTangent = vertToVec(extrudePath.tangentAt(0)).toUnitVector();
+  var lastRotateAt = null;
+  return function(vs) {
+    var v = vs[0], vec = vertToVec(v);
+    var currentTangent = vertToVec(extrudePath.tangentAt(v.ribStep)).toUnitVector();
+    var cross = initialTangent.cross(currentTangent);
+    var rotation = cross.distanceFrom($V([0,0,0])) *  Math.PI/2;
+    var rotateAt = cross.toUnitVector();
+    if (rotation == 0 && lastRotateAt)
+      rotateAt = lastRotateAt;
+    if (initialTangent.dot(currentTangent) < 0) rotation = Math.PI - rotation;
+    if (rotation > Math.PI - .00000001) rotation = Math.PI - .000000001;
+    lastRotateAt = rotateAt;
+    function t(p) {
+      var pv = $V(p);
+      var rotated = rotation ? pv.rotate(rotation, $L([0,0,0], rotateAt)) : pv;
+      return rotated.add(vec).elements;
+    }
+    return profile.transform(t);
+  }
+}
+
+function wireChannel() {
+  var circle = M.Path([STRING_HOLE_RADIUS,0,0])
+    .arc([STRING_HOLE_RADIUS,STRING_HOLE_RADIUS,0],[0,STRING_HOLE_RADIUS,0],1)
+    .arc([-STRING_HOLE_RADIUS,STRING_HOLE_RADIUS,0],[-STRING_HOLE_RADIUS,0,0],1)
+    .arc([-STRING_HOLE_RADIUS,-STRING_HOLE_RADIUS,0],[0,-STRING_HOLE_RADIUS,0],1)
+    .arc([STRING_HOLE_RADIUS,-STRING_HOLE_RADIUS,0],[STRING_HOLE_RADIUS,0,0],1)
+    // .reverse()
+
+  var path = M.Path([STRING_HOLDER_LENGTH - STRING_HOLE_PATH_RADIUS,0,STRING_HOLDER_HEIGHT+1])
+    .line([STRING_HOLDER_LENGTH - STRING_HOLE_PATH_RADIUS,0,STRING_HOLDER_HEIGHT],1)
+    .arc([STRING_HOLDER_LENGTH - STRING_HOLE_PATH_RADIUS,0,STRING_HOLDER_HEIGHT-STRING_HOLE_PATH_RADIUS],
+      [STRING_HOLDER_LENGTH,0,STRING_HOLDER_HEIGHT-STRING_HOLE_PATH_RADIUS],8)
+    .line([STRING_HOLDER_LENGTH+1,0,STRING_HOLDER_HEIGHT-STRING_HOLE_PATH_RADIUS],1)
+
+  var geometry = M.RibParameterizedPath( M.RibTransform([path], 30), extrudeAlong(path,circle), 10 );
+  var csg = M.CSGRenderer();
+  M.lift(geometry).generate( M.facers( M.skin, M.closeEdge, M.capBottom, M.capTop ) ).render(csg.renderer);
+  return csg.csgObject();
+}
+
+function wireConnectors() {
+  var holder = CSG.cube({
+    center: [STRING_HOLDER_LENGTH/2, 0, STRING_HOLDER_HEIGHT/2],
+    radius: [STRING_HOLDER_LENGTH/2, STRUT_WIDTH/2, STRING_HOLDER_HEIGHT/2]
+  })
+  .subtract(wireChannel())
+  .subtract(CSG.cylinder({
+    start: [PEN_OUTER_RADIUS+SPRING_RADIUS, 0, SKID_HEIGHT],
+    end: [PEN_OUTER_RADIUS+SPRING_RADIUS, 0, SKID_HEIGHT + SPRING_HEIGHT],
+    radius: SPRING_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cylinder({
+    start: [0,0,-1],
+    end: [0,0, SCREW_HEIGHT+ NUMBER_FOUR_SCREW_HEAD_RADIUS + 2],
+    radius: PEN_RADIUS + .2,
+    slices: CYLINDER_QUALITY
+  }))
+
+  return geometryRadialSymetry(THREE.CSG.fromCSG(holder), 3)
+}
+
+function springs() {
+  var csg = CSG.cylinder({
+    start: [PEN_OUTER_RADIUS+SPRING_RADIUS, 0, SKID_HEIGHT],
+    end: [PEN_OUTER_RADIUS+SPRING_RADIUS, 0, SKID_HEIGHT + SPRING_HEIGHT],
+    radius: SPRING_RADIUS,
+    slices: CYLINDER_QUALITY
+  })
+
+  return radialSymetry(csg, 3);
+}
+
+function holderWireChannel() {
+  var holes = CSG.cylinder({
+    start: [STRING_HOLDER_LENGTH - STRING_HOLE_PATH_RADIUS, 0, 0],
+    end: [STRING_HOLDER_LENGTH - STRING_HOLE_PATH_RADIUS, 0, PEN_HOLDER_BASE_HEIGHT+SPRING_HEIGHT+SKID_HEIGHT+1],
+    radius: STRING_HOLE_RADIUS,
+    slices: 8
+  })
+  return radialSymetry(holes, 3)
+}
+
+
+function holderCutouts() {
+  var holders = CSG.cube({
+    center: [STRING_HOLDER_LENGTH/2, 0, STRING_HOLDER_HEIGHT/2 + PEN_HOLDER_BASE_HEIGHT],
+    radius: [STRING_HOLDER_LENGTH/2, STRUT_WIDTH/2 + PEN_HOLDER_TOLERANCE, STRING_HOLDER_HEIGHT/2]
+  })
+  return radialSymetry(holders, 3)
+}
+
+
+function screwHoles() {
+  var holes = CSG.cylinder({
+    start: [0, 0, SCREW_HEIGHT],
+    end: [-SCREW_SOCKET_LENGTH - 1, 0, SCREW_HEIGHT],
+    radius: NUMBER_FOUR_SCREW_RADIUS,
+    slices: CYLINDER_QUALITY/4
+  })
+
+  return radialSymetry(holes, 3)
+}
+
+function stringHoles() {
+  var holes = CSG.cylinder({
+    start: [0, 0, LOW_HOLE],
+    end: [-PEN_OUTER_RADIUS - 1, 0, LOW_HOLE],
+    radius: STRING_HOLE_RADIUS,
+    slices: CYLINDER_QUALITY/2
+  }).union(CSG.cylinder({
+    start: [0, 0, HIGH_HOLE],
+    end: [-PEN_OUTER_RADIUS - 1, 0, HIGH_HOLE],
+    radius: STRING_HOLE_RADIUS,
+    slices: CYLINDER_QUALITY/8
+  }))
+
+  return radialSymetry(holes, 3)
+}
+
+
+function vertToVec(v) { return $V([v[0],v[1],v[2]]); }
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+  return g;
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+  return g;
+}
+
+    </script>
+
+  </body>
+</html>

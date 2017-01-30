@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Laser Pointer</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="FileSaver.js"></script>
+    <script src="three.min.js"></script>
+    <script src="csg.js"></script>
+    <script src="orbit_controls.js"></script>
+    <script src="ThreeCSG.js"></script>
+    <script src="cad.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+// TODO:
+// print
+
+var PREPARE_FOR_PRINTING = true;
+var FLIP = false;
+var CYLINDER_QUALITY = PREPARE_FOR_PRINTING ? 200 : 40;
+
+var BATTERY_RADIUS = 6;
+var BATTERY_LENGTH = 18;
+var BATTERY_OFFSET = 7;
+
+var SPRING_RADIUS = 2;
+var SPRING_LENGTH = 4;
+var SPRING_OFFSET = BATTERY_OFFSET + BATTERY_LENGTH;
+
+var BOARD_LENGTH = 14;
+var BOARD_DEPTH = 2;
+var BOARD_HEIGHT = 9;
+var BOARD_OFFSET = SPRING_OFFSET + SPRING_LENGTH;
+
+var REFLECTOR_RADIUS = 6.5;
+var REFLECTOR_LENGTH = 11.5;
+var REFLECTOR_OFFSET = BOARD_OFFSET + BOARD_LENGTH;
+
+var LENS_RADIUS = 3.9;
+var LENS_LENGTH = 5.5;
+var LENS_OFFSET = REFLECTOR_OFFSET + REFLECTOR_LENGTH;
+
+var OUTLET_RADIUS = 1.4;
+var OUTLET_LENGTH = 8;
+var OUTLET_OFFSET = LENS_OFFSET + LENS_LENGTH;
+
+var CASE_LENGTH = OUTLET_OFFSET+4;
+var CASE_HEIGHT = 20;
+var CASE_DEPTH = 16;
+var CASE_SIDE = 1;
+
+var WIRE_RADIUS = 1;
+
+var THUMB_RADIUS = CASE_HEIGHT/2 - CASE_SIDE;
+var BUTTON_STOP_RADIUS = THUMB_RADIUS + 1;
+var BUTTON_OFFSET = 4;
+var THUMB_DEPTH = 1;
+var BUTTON_TOLERANCE = .4;
+var BUTTON_DEPTH = 3.5;
+
+var SCREW_SHAFT_RADIUS = 1.4;
+var SCREW_HEAD_RADIUS = 3;
+var SCREW_LENGTH = 13;
+var SCREW_HEAD_DEPTH = 3;
+var SCREW_OFFSET = 1 + SCREW_HEAD_RADIUS;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+
+  var geometry = THREE.CSG.fromCSG(bottomSide());
+  translateGeometry(geometry, 0,13,0)
+  if (FLIP)
+    rotateGeometry(geometry, Math.PI, 0, 0)
+  addMesh( geometry, '#ffffff', 'bottom');
+
+  var geometry = THREE.CSG.fromCSG(topSide());
+  translateGeometry(geometry, 0,-13,0)
+  if (FLIP)
+    rotateGeometry(geometry, Math.PI, 0, 0)
+  addMesh( geometry, '#ffffff', 'top');
+
+  var geometry = THREE.CSG.fromCSG(buttonShape(BUTTON_TOLERANCE, BUTTON_DEPTH));
+  translateGeometry(geometry, 0,-36,0)
+  if (FLIP || PREPARE_FOR_PRINTING)
+    rotateGeometry(geometry, Math.PI, 0, 0)
+  addMesh( geometry, '#ffffff', 'button');
+}
+
+function topSide() {
+  return commonSide().subtract(CSG.cube({
+    radius: [BOARD_LENGTH/2, BOARD_HEIGHT/2, BOARD_DEPTH],
+    center: [BOARD_OFFSET+BOARD_LENGTH/2,0,0]
+  })).subtract(buttonShape(0, CASE_DEPTH/2))
+  .subtract(screw(SCREW_OFFSET, -CASE_HEIGHT/2 + SCREW_OFFSET, true))
+  .subtract(screw(SCREW_OFFSET, CASE_HEIGHT/2 - SCREW_OFFSET, true))
+  .subtract(screw(CASE_LENGTH-SCREW_OFFSET, -CASE_HEIGHT/2 + SCREW_OFFSET, true))
+  .subtract(screw(CASE_LENGTH-SCREW_OFFSET, CASE_HEIGHT/2 - SCREW_OFFSET, true))
+}
+
+function bottomSide() {
+  return commonSide().subtract(CSG.cube({
+    radius: [BOARD_LENGTH/2, BOARD_HEIGHT/2, BOARD_DEPTH],
+    center: [BOARD_OFFSET+BOARD_LENGTH/2,0,0]
+  })).subtract(CSG.cylinder({
+    start:[BATTERY_OFFSET+WIRE_RADIUS, 0, 0],
+    end:[BATTERY_OFFSET, 0, -BATTERY_RADIUS-WIRE_RADIUS],
+    radius: WIRE_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cylinder({
+    start:[BATTERY_OFFSET, 0, -BATTERY_RADIUS],
+    end:[REFLECTOR_OFFSET+1, 0, -BATTERY_RADIUS],
+    radius: WIRE_RADIUS,
+    slices: CYLINDER_QUALITY
+  }))
+  .subtract(screw(SCREW_OFFSET, -CASE_HEIGHT/2 + SCREW_OFFSET))
+  .subtract(screw(SCREW_OFFSET, CASE_HEIGHT/2 - SCREW_OFFSET))
+  .subtract(screw(CASE_LENGTH-SCREW_OFFSET, -CASE_HEIGHT/2 + SCREW_OFFSET))
+  .subtract(screw(CASE_LENGTH-SCREW_OFFSET, CASE_HEIGHT/2 - SCREW_OFFSET))
+}
+
+function commonSide() {
+  return CSG.cube({
+    radius: [CASE_LENGTH/2, CASE_HEIGHT/2, CASE_DEPTH/4],
+    center: [CASE_LENGTH/2,0,-CASE_DEPTH/4]
+  })
+  .subtract(CSG.cube({radius: [SCREW_OFFSET, SCREW_OFFSET, CASE_DEPTH], center: [0, -CASE_HEIGHT/2, 0] }))
+  .subtract(CSG.cube({radius: [SCREW_OFFSET, SCREW_OFFSET, CASE_DEPTH], center: [0, CASE_HEIGHT/2, 0] }))
+  .subtract(CSG.cube({radius: [SCREW_OFFSET, SCREW_OFFSET, CASE_DEPTH], center: [CASE_LENGTH, -CASE_HEIGHT/2, 0] }))
+  .subtract(CSG.cube({radius: [SCREW_OFFSET, SCREW_OFFSET, CASE_DEPTH], center: [CASE_LENGTH, CASE_HEIGHT/2, 0] }))
+  .union(corner(SCREW_OFFSET, -CASE_HEIGHT/2 + SCREW_OFFSET))
+  .union(corner(SCREW_OFFSET, CASE_HEIGHT/2 - SCREW_OFFSET))
+  .union(corner(CASE_LENGTH - SCREW_OFFSET, -CASE_HEIGHT/2 + SCREW_OFFSET))
+  .union(corner(CASE_LENGTH - SCREW_OFFSET, CASE_HEIGHT/2 - SCREW_OFFSET))
+  .subtract(CSG.cylinder({
+    start: [BATTERY_OFFSET, 0, 0],
+    end: [BATTERY_OFFSET + BATTERY_LENGTH, 0, 0],
+    radius: BATTERY_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cylinder({
+    start: [SPRING_OFFSET, 0, 0],
+    end: [SPRING_OFFSET + SPRING_LENGTH, 0, 0],
+    radius: SPRING_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cylinder({
+    start: [REFLECTOR_OFFSET, 0, 0],
+    end: [REFLECTOR_OFFSET + REFLECTOR_LENGTH, 0, 0],
+    radius: REFLECTOR_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cylinder({
+    start: [LENS_OFFSET, 0, 0],
+    end: [LENS_OFFSET + LENS_LENGTH, 0, 0],
+    radius: LENS_RADIUS,
+    slices: CYLINDER_QUALITY
+  })).subtract(CSG.cylinder({
+    start: [OUTLET_OFFSET, 0, 0],
+    end: [OUTLET_OFFSET + OUTLET_LENGTH, 0, 0],
+    radius: OUTLET_RADIUS,
+    slices: CYLINDER_QUALITY
+  }))
+}
+
+function corner(x,y) {
+    return CSG.cylinder({
+      start:[x, y, 0],
+      end:[x, y, -CASE_DEPTH/2],
+      radius: SCREW_OFFSET,
+      slices: CYLINDER_QUALITY
+    })
+}
+
+function buttonShape(tolerance, depth) {
+  var centerX = BOARD_OFFSET+BUTTON_OFFSET;
+  return CSG.cylinder({
+    start: [centerX, 0, -CASE_DEPTH/2 + THUMB_DEPTH],
+    end: [centerX, 0, -CASE_DEPTH/2 + depth],
+    radius: BUTTON_STOP_RADIUS - tolerance,
+    slices: CYLINDER_QUALITY
+  }).union(CSG.cylinder({
+    start: [centerX, 0, -CASE_DEPTH/2],
+    end: [centerX, 0, -CASE_DEPTH/2 + depth],
+    radius: THUMB_RADIUS - tolerance,
+    slices: CYLINDER_QUALITY
+  }))
+  .subtract(CSG.cube({
+    center: [centerX,CASE_HEIGHT/2,-CASE_DEPTH/2],
+    radius: [BUTTON_STOP_RADIUS,CASE_SIDE + tolerance,CASE_DEPTH/2]
+  })).subtract(CSG.cube({
+    center: [centerX,-CASE_HEIGHT/2,-CASE_DEPTH/2],
+    radius: [BUTTON_STOP_RADIUS,CASE_SIDE + tolerance,CASE_DEPTH/2]
+  }))
+}
+
+function screw(x, y, flip) {
+  var zSign = flip ? -1 : 1;
+  return CSG.cylinder({
+    start: [x, y, zSign*(-CASE_DEPTH/2)],
+    end: [x, y, zSign*(-CASE_DEPTH/2 + SCREW_LENGTH)],
+    radius: SCREW_SHAFT_RADIUS,
+    slices: CYLINDER_QUALITY / 4
+  }).union(CSG.cylinder({
+    start: [x, y, zSign*(-CASE_DEPTH/2)],
+    end: [x, y, zSign*(-CASE_DEPTH/2 + SCREW_HEAD_DEPTH)],
+    radius: SCREW_HEAD_RADIUS,
+    slices: CYLINDER_QUALITY / 4
+  }))
+}
+
+function addMesh( geometry, color, name ) {
+  var material = new THREE.MeshPhongMaterial( { color: color } );
+  var mesh = new THREE.Mesh(geometry, material );
+  a3d.cad.addMesh(mesh, name, true)
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+function scaleGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeScale(x,y,z);
+  g.applyMatrix(matrix);
+}
+
+    </script>
+  </body>
+</html>

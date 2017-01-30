@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Carriage</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        margin: 0px;
+        background-color: #999999;
+        overflow: hidden;
+      }
+
+      #buttons {
+        position: absolute;
+        top:5px;
+        left:5px;
+      }
+    </style>
+    <script src="../FileSaver.js"></script>
+    <script src="../three.min.js"></script>
+    <script src="../csg.js"></script>
+    <script src="../orbit_controls.js"></script>
+    <script src="../ThreeCSG.js"></script>
+    <script src="../cad.js"></script>
+  </head>
+  <body>
+    <div id="buttons"></div>
+    <script>
+
+// topR*sin(top) = bottomR*sin(bottom)
+// topR*cos(top) + bottomR*cos(bottom) = shaftLength
+// topR = bottomR*sin(bottom)/sin(top)
+// bottomR*sin(bottom)/tan(top) + bottomR*cos(bottom) = shaftLength
+// bottomR = shaftLength / (sin(bottom)/tan(top) + cos(bottom))
+
+var PREPARE_FOR_PRINTING = false;
+var FLIP = false;
+var CYLINDER_QUALITY = PREPARE_FOR_PRINTING ? 50 : 20;
+
+var TOP_REST_ANGLE = .24*Math.PI;
+var BOTTOM_REST_ANGLE = .12*Math.PI;
+var OUTER_RADIUS = 21.5;
+var INNER_RADIUS = 9;
+var BASE_HEIGHT = 3;
+var SHAFT_RADIUS = 2.8;
+var SHAFT_OUTER_RADIUS = 5.5;
+var SMALL_SHAFT_LENGTH = 15.9;
+var LONG_SHAFT_LENGTH = 32.4;
+var VERTICAL_SHAFT_OUTER_RADIUS = SHAFT_RADIUS + .5;
+var BEAM_DEPTH = 2.2;
+var BOTTOM_BEAM_LENGTH = (LONG_SHAFT_LENGTH - 2*SHAFT_OUTER_RADIUS) /
+    (Math.cos(BOTTOM_REST_ANGLE) * Math.sin(TOP_REST_ANGLE) / Math.cos(TOP_REST_ANGLE) + Math.sin(BOTTOM_REST_ANGLE));
+var TOP_BEAM_LENGTH = BOTTOM_BEAM_LENGTH * Math.cos(BOTTOM_REST_ANGLE) / Math.cos(TOP_REST_ANGLE);
+var BEAM_HEIGHT = 4;
+var VERTICAL_SHAFT_HOLDER_HEIGHT = 10;
+var EDGE_OFFSET = 12;
+var NUMBER_FOUR_SCREW_RADIUS = 1.4;
+var STRING_ATTACHMENT_WIDTH = 5;
+var STRING_ATTACHMENT_HOLE = .9;
+var STRING_ATTACHMENT_HOLE_SEP = 2.8;
+
+a3d.cad.init();
+addGeometry();
+a3d.cad.render();
+
+function addGeometry() {
+  // var geometry = THREE.CSG.fromCSG(base());
+  // addMesh( geometry, '#ffffff', 'base');
+  //
+  geometry = THREE.CSG.fromCSG(base(true));
+  if (PREPARE_FOR_PRINTING) {
+    translateGeometry(geometry, 0, 2*OUTER_RADIUS, 0);
+  } else {
+    rotateGeometry(geometry, 0, Math.PI, 0);
+    translateGeometry(geometry, 0, 0, LONG_SHAFT_LENGTH);
+  }
+  addMesh( geometry, '#ffffff', 'top');
+
+  if (PREPARE_FOR_PRINTING) {
+    var geometry = createBeam(true, false, 0);
+    rotateGeometry(geometry, 0, -Math.PI/2, 0);
+    translateGeometry(geometry, 0, 0, 0);
+    addMesh(geometry, '#ffffff', 'bottom_left_beam');
+
+    geometry = createBeam(false, false, 0);
+    rotateGeometry(geometry, 0, Math.PI/2, 0);
+    translateGeometry(geometry, 40, 80, 0);
+    addMesh(geometry, '#ffffff', 'bottom_right_beam');
+
+    geometry = createBeam(true, true, 0);
+    rotateGeometry(geometry, 0, -Math.PI/2, 0);
+    translateGeometry(geometry, 0, 80, 0);
+    addMesh(geometry, '#ffffff', 'top_left_beam');
+
+    geometry = createBeam(false, true, 0);
+    rotateGeometry(geometry, 0, Math.PI/2, 0);
+    translateGeometry(geometry, 40, 0, 0);
+    addMesh(geometry, '#ffffff', 'top_right_beam');
+  } else {
+    addMesh(createBeam(true, false, 0), '#ffffff', 'beam');
+    addMesh(createBeam(false, false, 0), '#ffffff');
+    addMesh(createBeam(true, true, 0), '#ffffff');
+    addMesh(createBeam(false, true, 0), '#ffffff');
+
+    addMesh(createBeam(true, false, 2*Math.PI/3), '#ffffff');
+    addMesh(createBeam(false, false, 2*Math.PI/3), '#ffffff');
+    addMesh(createBeam(true, true, 2*Math.PI/3), '#ffffff');
+    addMesh(createBeam(false, true, 2*Math.PI/3), '#ffffff');
+
+    addMesh(createBeam(true, false, 4*Math.PI/3), '#ffffff');
+    addMesh(createBeam(false, false, 4*Math.PI/3), '#ffffff');
+    addMesh(createBeam(true, true, 4*Math.PI/3), '#ffffff');
+    addMesh(createBeam(false, true, 4*Math.PI/3), '#ffffff');
+  }
+}
+
+function base(top) {
+  var connectorWidth = SMALL_SHAFT_LENGTH - 4*BEAM_DEPTH - .2;
+  var edge = THREE.CSG.fromCSG(radialSymetry(CSG.cube({
+    center: [0, OUTER_RADIUS, 0],
+    radius: [OUTER_RADIUS, OUTER_RADIUS-EDGE_OFFSET, 2*BASE_HEIGHT]
+  }),3));
+  rotateGeometry(edge, 0, 0, Math.PI/3);
+
+  var base = CSG.cylinder({
+    start: [0, 0, 0],
+    end: [0, 0, BASE_HEIGHT],
+    radius: OUTER_RADIUS,
+    slices: CYLINDER_QUALITY
+  })
+
+  if (top) {
+    var mount = THREE.CSG.fromCSG(radialSymetry(CSG.cylinder({
+        start: [0, INNER_RADIUS/2, BASE_HEIGHT + NUMBER_FOUR_SCREW_RADIUS],
+        end: [0, EDGE_OFFSET, BASE_HEIGHT + NUMBER_FOUR_SCREW_RADIUS],
+        radius: NUMBER_FOUR_SCREW_RADIUS + 2,
+        slices: CYLINDER_QUALITY
+      }),3)
+      .union(radialSymetry(CSG.cube({
+          center: [0, (EDGE_OFFSET + INNER_RADIUS/2)/2, BASE_HEIGHT],
+          radius: [NUMBER_FOUR_SCREW_RADIUS + 2, (EDGE_OFFSET - INNER_RADIUS/2)/2, NUMBER_FOUR_SCREW_RADIUS]
+        }),3))
+      .subtract(radialSymetry(CSG.cylinder({
+          start: [0, INNER_RADIUS/2, BASE_HEIGHT + NUMBER_FOUR_SCREW_RADIUS],
+          end: [0, EDGE_OFFSET+1, BASE_HEIGHT + NUMBER_FOUR_SCREW_RADIUS],
+          radius: NUMBER_FOUR_SCREW_RADIUS,
+          slices: CYLINDER_QUALITY
+        }),3))
+    )
+    rotateGeometry(mount, 0, 0, Math.PI/3);
+    base = base.union(THREE.CSG.toCSG(mount));
+  }
+
+  return base
+  .subtract(THREE.CSG.toCSG(edge))
+  .subtract(radialSymetry(CSG.cylinder({
+      start: [-OUTER_RADIUS, INNER_RADIUS + SHAFT_OUTER_RADIUS, SHAFT_OUTER_RADIUS],
+      end: [OUTER_RADIUS, INNER_RADIUS + SHAFT_OUTER_RADIUS, SHAFT_OUTER_RADIUS],
+      radius: SHAFT_OUTER_RADIUS - .01,
+      slices: CYLINDER_QUALITY
+  }), 3))
+  .subtract(CSG.cylinder({
+    start: [0, 0, -1],
+    end: [0, 0, 5*BASE_HEIGHT],
+    radius: 3*INNER_RADIUS/4,
+    slices: CYLINDER_QUALITY
+  }))
+
+  .union(radialSymetry(CSG.cylinder({
+      start: [0, OUTER_RADIUS, 0],
+      end: [0, OUTER_RADIUS, VERTICAL_SHAFT_HOLDER_HEIGHT],
+      radius: VERTICAL_SHAFT_OUTER_RADIUS + (top?.4:0),
+      slices: CYLINDER_QUALITY
+  }), 3))
+  .union(radialSymetry(CSG.cylinder({
+      start: [-connectorWidth/2, INNER_RADIUS + SHAFT_OUTER_RADIUS, SHAFT_OUTER_RADIUS],
+      end: [connectorWidth/2, INNER_RADIUS + SHAFT_OUTER_RADIUS, SHAFT_OUTER_RADIUS],
+      radius: SHAFT_OUTER_RADIUS,
+      slices: CYLINDER_QUALITY
+    }).subtract(CSG.cube({
+      center: [0, INNER_RADIUS + SHAFT_OUTER_RADIUS, 2*VERTICAL_SHAFT_HOLDER_HEIGHT],
+      radius: [connectorWidth, SHAFT_OUTER_RADIUS, VERTICAL_SHAFT_HOLDER_HEIGHT]
+    })), 3))
+
+  .subtract(radialSymetry(CSG.cylinder({
+      start: [-connectorWidth/2-1, INNER_RADIUS + SHAFT_OUTER_RADIUS, SHAFT_OUTER_RADIUS],
+      end: [connectorWidth/2+1, INNER_RADIUS + SHAFT_OUTER_RADIUS, SHAFT_OUTER_RADIUS],
+      radius: SHAFT_RADIUS,
+      slices: CYLINDER_QUALITY
+  }), 3))
+
+  .subtract(radialSymetry(CSG.cylinder({
+      start: [0, OUTER_RADIUS, -1],
+      end: [0, OUTER_RADIUS, VERTICAL_SHAFT_HOLDER_HEIGHT+1],
+      radius: SHAFT_RADIUS + (top?.4:0),
+      slices: CYLINDER_QUALITY
+  }),3))
+}
+
+function createBeam(left, top, angle) {
+  var geometry = top ? topBeam(left) : bottomBeam(left);
+  var leftMul = left ? -1 : 1;
+  var topMul = top ? -1 : 1;
+  rotateGeometry(geometry, 0, Math.PI/2, 0);
+  translateGeometry(geometry,
+      leftMul * (SMALL_SHAFT_LENGTH/2 - 2*BEAM_DEPTH + (top ? BEAM_DEPTH : 0)),
+      INNER_RADIUS + SHAFT_OUTER_RADIUS,
+      top ? LONG_SHAFT_LENGTH - SHAFT_OUTER_RADIUS : SHAFT_OUTER_RADIUS);
+  rotateGeometry(geometry, 0, 0, angle);
+  return geometry;
+}
+
+function topBeam(left) {
+  var BEAM_LENGTH = TOP_BEAM_LENGTH;
+  var leftMul = left ? -1 : 1;
+  var beam = CSG.cube({
+    center: [0, 0, leftMul*BEAM_DEPTH/2],
+    radius: [BEAM_LENGTH/2, BEAM_HEIGHT/2, BEAM_DEPTH/2]
+  })
+  .union(CSG.cylinder({
+    start: [BEAM_LENGTH/2, 0, 0],
+    end: [BEAM_LENGTH/2, 0, leftMul*BEAM_DEPTH],
+    radius: SHAFT_OUTER_RADIUS,
+    slices: CYLINDER_QUALITY
+  }))
+  .union(CSG.cylinder({
+    start: [-BEAM_LENGTH/2, 0, leftMul*-BEAM_DEPTH],
+    end: [-BEAM_LENGTH/2, 0, leftMul*BEAM_DEPTH],
+    radius: SHAFT_OUTER_RADIUS,
+    slices: CYLINDER_QUALITY
+  }))
+  .subtract(radialSymetry(CSG.cylinder({
+    start: [BEAM_LENGTH/2, 0, -3*BEAM_DEPTH],
+    end: [BEAM_LENGTH/2, 0, 3*BEAM_DEPTH],
+    radius: SHAFT_RADIUS + .15,
+    slices: CYLINDER_QUALITY
+  }),2))
+
+  var geometry = THREE.CSG.fromCSG(beam);
+  translateGeometry(geometry, BEAM_LENGTH/2, 0, 0);
+  rotateGeometry(geometry, 0, 0, Math.PI/2 -TOP_REST_ANGLE);
+  return geometry;
+}
+
+
+function bottomBeam(left) {
+  var centerLength = SMALL_SHAFT_LENGTH/2 - 2*BEAM_DEPTH - .3;
+  var BEAM_LENGTH = BOTTOM_BEAM_LENGTH;
+  var leftMul = left ? -1 : 1;
+  var beam = CSG.cube({
+    center: [0, 0, leftMul*BEAM_DEPTH/2],
+    radius: [BEAM_LENGTH/2, BEAM_HEIGHT/2, BEAM_DEPTH/2]
+  })
+  .union(CSG.cylinder({
+    start: [-BEAM_LENGTH/2, 0, 0],
+    end: [-BEAM_LENGTH/2, 0, leftMul*BEAM_DEPTH],
+    radius: SHAFT_OUTER_RADIUS,
+    slices: CYLINDER_QUALITY
+  }))
+  .union(CSG.cylinder({
+    start: [BEAM_LENGTH/2, 0, left ? -BEAM_DEPTH : -centerLength],
+    end: [BEAM_LENGTH/2, 0, left ? centerLength : BEAM_DEPTH],
+    radius: SHAFT_OUTER_RADIUS,
+    slices: CYLINDER_QUALITY
+  }))
+  .union(stringAttachment(left, centerLength))
+  .subtract(radialSymetry(CSG.cylinder({
+    start: [BEAM_LENGTH/2, 0, -3*BEAM_DEPTH],
+    end: [BEAM_LENGTH/2, 0, 3*BEAM_DEPTH],
+    radius: SHAFT_RADIUS + .15,
+    slices: CYLINDER_QUALITY
+  }),2))
+
+  var geometry = THREE.CSG.fromCSG(beam);
+  translateGeometry(geometry, BEAM_LENGTH/2, 0, 0);
+  rotateGeometry(geometry, 0, 0, Math.PI/2 + BOTTOM_REST_ANGLE);
+  return geometry;
+}
+
+function stringAttachment(left, centerLength) {
+  var length = TOP_BEAM_LENGTH * Math.cos(Math.PI/2 - TOP_REST_ANGLE) + SHAFT_RADIUS;
+  var attachment = CSG.cube({
+    center: [length/2, 0, (left ? centerLength - BEAM_DEPTH : BEAM_DEPTH - centerLength)/2],
+    radius: [length/2, STRING_ATTACHMENT_WIDTH/2, (centerLength + BEAM_DEPTH)/2]
+  }).union(CSG.cylinder({
+    start: [length, 0, left ? -BEAM_DEPTH : -centerLength],
+    end: [length, 0, left ? centerLength : BEAM_DEPTH],
+    radius: STRING_ATTACHMENT_WIDTH/2,
+    slices: CYLINDER_QUALITY
+  }))
+  for (var x=length; x > SHAFT_OUTER_RADIUS; x -= STRING_ATTACHMENT_HOLE_SEP)
+    attachment = attachment.subtract(CSG.cylinder({
+      start: [x, 0, -3*BEAM_DEPTH],
+      end: [x, 0, 3*BEAM_DEPTH],
+      radius: STRING_ATTACHMENT_HOLE,
+      slices: CYLINDER_QUALITY / 2
+    }))
+  var geometry = THREE.CSG.fromCSG(attachment);
+  rotateGeometry(geometry, 0, 0, Math.PI/2 - BOTTOM_REST_ANGLE);
+  translateGeometry(geometry, BOTTOM_BEAM_LENGTH/2, 0, 0);
+  return THREE.CSG.toCSG(geometry);
+}
+
+
+function addMesh( geometry, color, name ) {
+  var material = new THREE.MeshPhongMaterial( { color: color } );
+  var mesh = new THREE.Mesh(geometry, material );
+  a3d.cad.addMesh(mesh, name, true)
+}
+
+
+function radialSymetry(csg, count) {
+  var geometry = THREE.CSG.fromCSG(csg)
+  for (var i=1; i<count; i++) {
+    rotateGeometry(geometry, 0, 0, 2*Math.PI/count)
+    csg = csg.union(THREE.CSG.toCSG(geometry))
+  }
+  return csg;
+}
+
+function translateGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeTranslation(x,y,z);
+  g.applyMatrix(matrix);
+}
+function rotateGeometry( g, x, y, z ) {
+  var matrix;
+  if (x)
+    matrix = new THREE.Matrix4().makeRotationX(x);
+  if (y)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationY(y);
+  if (z)
+    matrix = (matrix||new THREE.Matrix4()).makeRotationZ(z);
+  if (matrix)
+    g.applyMatrix(matrix);
+}
+function scaleGeometry( g, x, y, z ) {
+  matrix = new THREE.Matrix4().makeScale(x,y,z);
+  g.applyMatrix(matrix);
+}
+
+    </script>
+  </body>
+</html>
